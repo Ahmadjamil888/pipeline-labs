@@ -71,7 +71,7 @@ function detectType(values: unknown[], name: string, uniquePercent: number, isId
   
   if (uniquePercent < 50 || values.length < 20) return 'categorical';
   
-  const avgLength = sample.reduce((sum: number, v) => sum + String(v).length, 0) / sample.length;
+  const avgLength = (sample as unknown[]).reduce<number>((sum, v) => sum + String(v).length, 0) / sample.length;
   if (avgLength > 50) return 'text';
   
   return 'categorical';
