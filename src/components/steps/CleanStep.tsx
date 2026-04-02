@@ -1,23 +1,28 @@
 import { usePipeline } from '@/context/PipelineContext';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AlertTriangle } from 'lucide-react';
+import { motion } from 'framer-motion';
 import type { ColumnType } from '@/types/dataset';
 
-const typeColors: Record<ColumnType, string> = {
-  numerical: 'bg-info/20 text-info',
-  categorical: 'bg-warning/20 text-warning',
-  text: 'bg-primary/20 text-primary',
-  datetime: 'bg-accent/20 text-accent',
-  irrelevant: 'bg-destructive/20 text-destructive',
+const typeLabels: Record<ColumnType, string> = {
+  numerical: 'NUM',
+  categorical: 'CAT',
+  text: 'TXT',
+  datetime: 'DATE',
+  irrelevant: 'DROP',
 };
 
 export function CleanStep() {
   const { dataset, updateColumn, runCleaning } = usePipeline();
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-6"
+    >
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-foreground">Column Configuration</h2>
@@ -26,12 +31,12 @@ export function CleanStep() {
         <Button onClick={runCleaning}>Apply Cleaning</Button>
       </div>
 
-      <div className="grid gap-3">
+      <div className="grid gap-px bg-border">
         {dataset.columns.map(col => (
           <div
             key={col.name}
-            className={`flex items-center gap-4 rounded-lg border p-4 transition-all ${
-              col.keep ? 'border-border bg-card' : 'border-border/50 bg-muted/30 opacity-60'
+            className={`flex items-center gap-4 bg-background p-4 ${
+              !col.keep ? 'opacity-50' : ''
             }`}
           >
             <Switch checked={col.keep} onCheckedChange={v => updateColumn(col.name, { keep: v })} />
@@ -39,13 +44,21 @@ export function CleanStep() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm font-medium text-foreground">{col.name}</span>
-                <span className={`rounded px-2 py-0.5 text-xs font-medium ${typeColors[col.type]}`}>{col.type}</span>
+                <span className="border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">
+                  {typeLabels[col.type]}
+                </span>
+                {col.warning && (
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <AlertTriangle className="h-3 w-3" />
+                    {col.isEmail ? 'email' : col.isId ? 'identifier' : 'flagged'}
+                  </span>
+                )}
               </div>
               <div className="mt-1 flex gap-4 text-xs text-muted-foreground">
                 <span>Nulls: {col.nullPercent.toFixed(1)}%</span>
                 <span>Unique: {col.uniqueCount}</span>
                 {col.type === 'numerical' && col.mean !== undefined && (
-                  <span>Mean: {col.mean.toFixed(2)}</span>
+                  <span>μ={col.mean.toFixed(2)} σ={col.std?.toFixed(2)}</span>
                 )}
                 {col.type === 'categorical' && col.mode && (
                   <span>Mode: {col.mode}</span>
@@ -54,7 +67,7 @@ export function CleanStep() {
             </div>
 
             {col.type === 'numerical' && col.keep && (
-              <Select value={col.scalingMethod} onValueChange={v => updateColumn(col.name, { scalingMethod: v as 'none' | 'normalize' | 'standardize' })}>
+              <Select value={col.scalingMethod} onValueChange={v => updateColumn(col.name, { scalingMethod: v as any })}>
                 <SelectTrigger className="w-[140px]">
                   <SelectValue />
                 </SelectTrigger>
@@ -68,6 +81,6 @@ export function CleanStep() {
           </div>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }

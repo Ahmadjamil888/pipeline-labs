@@ -6,7 +6,7 @@ export async function getAIReasonings(columns: ColumnAnalysis[]): Promise<AIReas
   const prompt = `Analyze these dataset columns and provide reasoning for each. Return a JSON array.
 
 Columns:
-${columns.map(c => `- "${c.name}": type=${c.type}, nulls=${c.nullPercent.toFixed(1)}%, unique=${c.uniquePercent.toFixed(1)}%, constant=${c.isConstant}, isId=${c.isId}, kept=${c.keep}, samples=${JSON.stringify(c.sample.slice(0, 3))}`).join('\n')}
+${columns.map(c => `- "${c.name}": type=${c.type}, nulls=${c.nullPercent.toFixed(1)}%, unique=${c.uniquePercent.toFixed(1)}%, constant=${c.isConstant}, isId=${c.isId}, isEmail=${c.isEmail || false}, kept=${c.keep}, samples=${JSON.stringify(c.sample.slice(0, 3))}`).join('\n')}
 
 For each column return:
 {"column":"name","action":"kept/dropped/transformed","reason":"why","suggestion":"improvement idea","type":"keep|drop|transform|warning|suggestion"}
@@ -45,6 +45,11 @@ Return ONLY a JSON array, no markdown.`;
 
 function generateFallbackReasonings(columns: ColumnAnalysis[]): AIReasoning[] {
   return columns.map(col => {
+    if (col.isEmail) return {
+      column: col.name, action: 'Dropped', type: 'drop' as const,
+      reason: 'Email column detected — unique identifiers with no predictive value. Encoding emails creates noise.',
+      suggestion: 'Extract domain for categorical feature if email provider matters.',
+    };
     if (col.isId) return {
       column: col.name, action: 'Dropped', type: 'drop' as const,
       reason: `High uniqueness (${col.uniquePercent.toFixed(0)}%) suggests this is an identifier column with no predictive value.`,
@@ -61,7 +66,8 @@ function generateFallbackReasonings(columns: ColumnAnalysis[]): AIReasoning[] {
     if (col.type === 'numerical') return {
       column: col.name, action: 'Kept & Standardized', type: 'keep' as const,
       reason: `Numerical feature with ${col.nullPercent.toFixed(0)}% nulls filled with median (${col.median?.toFixed(2)}). Standardized for model convergence.`,
-      suggestion: col.std && col.mean && col.std > col.mean * 2 ? 'High variance detected — consider log transform.' : undefined,
+      suggestion: col.skewness && Math.abs(col.skewness) > 2 ? `High skewness (${col.skewness.toFixed(2)}) — consider log transform.` : 
+        col.std && col.mean && col.std > col.mean * 2 ? 'High variance detected — consider log transform.' : undefined,
     };
     if (col.type === 'categorical') return {
       column: col.name, action: 'One-hot encoded', type: 'transform' as const,

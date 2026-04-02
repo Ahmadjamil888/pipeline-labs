@@ -13,7 +13,7 @@ const steps: { key: PipelineStep; label: string; icon: React.ElementType }[] = [
 const stepOrder: PipelineStep[] = ['upload', 'analyze', 'clean', 'transform', 'export'];
 
 export function PipelineStepper() {
-  const { step, setStep, dataset } = usePipeline();
+  const { step, setStep } = usePipeline();
   const currentIdx = stepOrder.indexOf(step);
 
   const canNavigate = (target: PipelineStep) => {
@@ -24,7 +24,7 @@ export function PipelineStepper() {
   };
 
   return (
-    <div className="flex items-center gap-1 rounded-lg bg-card p-1.5">
+    <div className="flex items-center gap-0 border border-border">
       {steps.map((s, i) => {
         const Icon = s.icon;
         const isActive = step === s.key;
@@ -36,11 +36,13 @@ export function PipelineStepper() {
             key={s.key}
             onClick={() => clickable && setStep(s.key)}
             disabled={!clickable}
-            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all ${
+              i > 0 ? 'border-l border-border' : ''
+            } ${
               isActive
-                ? 'bg-primary text-primary-foreground glow-primary'
+                ? 'bg-foreground text-background'
                 : isDone
-                ? 'bg-secondary text-foreground hover:bg-secondary/80'
+                ? 'bg-muted text-foreground hover:bg-accent'
                 : 'text-muted-foreground'
             } ${clickable ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
           >
