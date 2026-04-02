@@ -1,30 +1,14 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
-import { supabase } from '@/integrations/supabase/client'
-import { 
-  Send, 
-  Plus, 
-  FileSpreadsheet, 
-  RefreshCw, 
-  Download,
-  Loader2,
-  Sparkles,
-  Database,
-  CheckCircle,
-  X,
-  AlertCircle,
-  Bot,
-  Brain,
-  Zap,
-  LogOut
-} from 'lucide-react'
+import { FileSpreadsheet, RefreshCw, Send, Plus, Brain, Database, Download, X, AlertCircle, CheckCircle, Sparkles, LogOut } from 'lucide-react'
 
 const HF = "'Helvetica World', 'Helvetica Neue', Helvetica, Arial, sans-serif"
 
-type AIProvider = 'groq' | 'openrouter' | 'deepseek' | 'gemini'
+type AIProvider = 'openrouter'
 
 interface ProviderConfig {
   id: AIProvider
@@ -101,16 +85,11 @@ export default function ChatDashboard() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [selectedProvider, setSelectedProvider] = useState<AIProvider>('openrouter')
-  const [showProviderSelector, setShowProviderSelector] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const providers: ProviderConfig[] = [
-    { id: 'openrouter', name: 'OpenRouter (Free)', icon: <Brain size={14} />, model: 'meta-llama/llama-3.1-8b-instruct:free' },
-    { id: 'groq', name: 'Groq (Fast)', icon: <Zap size={14} />, model: 'llama-3.1-8b-instant' },
-    { id: 'deepseek', name: 'DeepSeek', icon: <Brain size={14} />, model: 'deepseek-chat' },
-    { id: 'gemini', name: 'Gemini', icon: <Sparkles size={14} />, model: 'gemini-1.5-flash' },
+    { id: 'openrouter', name: 'OpenRouter (Free)', icon: <Brain size={14} />, model: 'google/gemma-3-4b-it:free' },
   ]
 
   // Scroll to bottom of messages
@@ -269,8 +248,8 @@ export default function ChatDashboard() {
           message: userMessage.content,
           datasetId: dataset?.id || selectedDataset?.id,
           history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
-          provider: selectedProvider,
-          model: providers.find(p => p.id === selectedProvider)?.model
+          provider: 'openrouter' as const,
+          model: 'google/gemma-3-4b-it:free',
         })
       })
 
@@ -823,26 +802,20 @@ export default function ChatDashboard() {
                 </button>
               )}
 
-              {/* AI Provider Selector */}
-              <button
-                onClick={() => setShowProviderSelector(!showProviderSelector)}
-                style={{
-                  padding: '8px',
-                  borderRadius: '12px',
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'rgba(255,255,255,0.6)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                }}
-              >
-                {providers.find(p => p.id === selectedProvider)?.icon}
-                <span style={{ fontSize: '12px', fontFamily: HF, fontWeight: 300, display: 'none' }}>
-                  {providers.find(p => p.id === selectedProvider)?.name}
+              {/* AI Provider - OpenRouter Only */}
+              <div style={{
+                padding: '8px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                color: 'rgba(255,255,255,0.6)',
+              }}>
+                <Brain size={16} />
+                <span style={{ fontSize: '12px', fontFamily: HF, fontWeight: 300 }}>
+                  OpenRouter Free
                 </span>
-              </button>
+              </div>
 
               {/* Text Input */}
               <textarea
@@ -903,65 +876,6 @@ export default function ChatDashboard() {
           </div>
         </div>
 
-        {/* Provider Selector Dropdown */}
-        {showProviderSelector && (
-          <div style={{
-            position: 'fixed',
-            bottom: '140px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: '256px',
-            borderRadius: '16px',
-            border: '1px solid rgba(255,255,255,0.1)',
-            background: '#0a0a0a',
-            boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
-            zIndex: 50,
-            marginLeft: '128px',
-          }}>
-            <div style={{
-              padding: '12px',
-              borderBottom: '1px solid rgba(255,255,255,0.1)',
-            }}>
-              <p style={{ fontSize: '12px', fontFamily: HF, fontWeight: 300, color: 'rgba(255,255,255,0.5)' }}>
-                Select AI Provider
-              </p>
-            </div>
-            <div>
-              {providers.map((provider) => (
-                <button
-                  key={provider.id}
-                  onClick={() => { setSelectedProvider(provider.id); setShowProviderSelector(false); }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px',
-                    border: 'none',
-                    borderBottom: '1px solid rgba(255,255,255,0.05)',
-                    background: selectedProvider === provider.id ? 'rgba(255,255,255,0.1)' : 'transparent',
-                    color: '#fff',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  <span style={{ color: 'rgba(255,255,255,0.6)' }}>{provider.icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: '14px', fontFamily: HF, fontWeight: 300 }}>
-                      {provider.name}
-                    </p>
-                    <p style={{ fontSize: '12px', fontFamily: HF, fontWeight: 300, color: 'rgba(255,255,255,0.4)' }}>
-                      {provider.model}
-                    </p>
-                  </div>
-                  {selectedProvider === provider.id && (
-                    <CheckCircle size={14} style={{ color: '#22c55e' }} />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Dataset Selector Dropdown */}
         {showDatasetSelector && (

@@ -1,0 +1,616 @@
+openapi: 3.1.0
+info:
+  title: Pipeline Labs API
+  description: |
+    AI Data Infrastructure API for ML Teams. Transform raw data into production-ready ML datasets with AI-powered preprocessing, schema-aware cleaning, automated validation, and reproducible workflows.
+  version: 1.0.0
+  contact:
+    name: Pipeline Labs Support
+    email: support@pipelinelabs.ai
+    url: https://pipelinelabs.ai
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.pipelinelabs.ai/v1
+    description: Production API
+  - url: https://staging-api.pipelinelabs.ai/v1
+    description: Staging API
+
+paths:
+  /datasets:
+    get:
+      summary: List datasets
+      description: Retrieve all datasets for the authenticated user
+      operationId: listDatasets
+      tags:
+        - Datasets
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of datasets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Dataset'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    
+    post:
+      summary: Create dataset
+      description: Upload a new dataset for processing
+      operationId: createDataset
+      tags:
+        - Datasets
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV or JSON file to upload
+                name:
+                  type: string
+                  description: Dataset name
+                description:
+                  type: string
+                  description: Dataset description
+      responses:
+        '201':
+          description: Dataset created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /datasets/{datasetId}:
+    get:
+      summary: Get dataset
+      description: Retrieve a specific dataset by ID
+      operationId: getDataset
+      tags:
+        - Datasets
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: datasetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Dataset details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    put:
+      summary: Update dataset
+      description: Update dataset metadata
+      operationId: updateDataset
+      tags:
+        - Datasets
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: datasetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetUpdate'
+      responses:
+        '200':
+          description: Dataset updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    delete:
+      summary: Delete dataset
+      description: Delete a dataset and all associated data
+      operationId: deleteDataset
+      tags:
+        - Datasets
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: datasetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Dataset deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /datasets/{datasetId}/analyze:
+    post:
+      summary: Analyze dataset
+      description: Run AI-powered column analysis on the dataset
+      operationId: analyzeDataset
+      tags:
+        - Analysis
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: datasetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Analysis complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  columns:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ColumnAnalysis'
+                  aiReasonings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AIReasoning'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /datasets/{datasetId}/clean:
+    post:
+      summary: Clean dataset
+      description: Apply data cleaning operations based on AI recommendations
+      operationId: cleanDataset
+      tags:
+        - Processing
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: datasetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operations:
+                  type: array
+                  items:
+                    type: string
+                    enum: [remove_nulls, remove_duplicates, fix_types, remove_outliers]
+      responses:
+        '200':
+          description: Cleaning complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+
+  /datasets/{datasetId}/transform:
+    post:
+      summary: Transform dataset
+      description: Apply transformations (encoding, scaling, feature engineering)
+      operationId: transformDataset
+      tags:
+        - Processing
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: datasetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                encoding:
+                  type: string
+                  enum: [one_hot, label, target]
+                scaling:
+                  type: string
+                  enum: [standard, min_max, robust]
+                featureEngineering:
+                  type: boolean
+      responses:
+        '200':
+          description: Transformation complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+
+  /datasets/{datasetId}/export:
+    get:
+      summary: Export dataset
+      description: Export processed dataset in various formats
+      operationId: exportDataset
+      tags:
+        - Export
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: datasetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [csv, json, parquet, xlsx]
+            default: csv
+        - name: split
+          in: query
+          schema:
+            type: string
+            enum: [train_test, train_test_val]
+      responses:
+        '200':
+          description: Exported data
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /chat:
+    post:
+      summary: AI Chat
+      description: Send a message to the AI assistant for data preprocessing guidance
+      operationId: chat
+      tags:
+        - AI
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: AI response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+
+  /auth/google:
+    post:
+      summary: Google OAuth
+      description: Exchange Google OAuth code for session token
+      operationId: googleAuth
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: OAuth authorization code
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+
+  /status:
+    get:
+      summary: API Status
+      description: Check API and service health status
+      operationId: getStatus
+      tags:
+        - System
+      responses:
+        '200':
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from Supabase authentication
+
+  schemas:
+    Dataset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [uploaded, analyzing, cleaning, transforming, ready, error]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        rowCount:
+          type: integer
+        columnCount:
+          type: integer
+        fileSize:
+          type: integer
+          description: Size in bytes
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnAnalysis'
+      required:
+        - id
+        - name
+        - status
+        - createdAt
+
+    DatasetUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    ColumnAnalysis:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [numerical, categorical, datetime, text, boolean]
+        nullCount:
+          type: integer
+        nullPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        uniqueCount:
+          type: integer
+        uniquePercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        mean:
+          type: number
+        median:
+          type: number
+        std:
+          type: number
+        min:
+          type: number
+        max:
+          type: number
+        isConstant:
+          type: boolean
+        isId:
+          type: boolean
+        isEmail:
+          type: boolean
+        keep:
+          type: boolean
+        scalingMethod:
+          type: string
+          enum: [none, normalize, standardize]
+
+    AIReasoning:
+      type: object
+      properties:
+        column:
+          type: string
+        action:
+          type: string
+          enum: [kept, dropped, transformed]
+        reason:
+          type: string
+        suggestion:
+          type: string
+        type:
+          type: string
+          enum: [drop, keep, transform, warning, suggestion]
+
+    ChatRequest:
+      type: object
+      properties:
+        message:
+          type: string
+        datasetId:
+          type: string
+          format: uuid
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                type: string
+        provider:
+          type: string
+          enum: [openrouter]
+          default: openrouter
+      required:
+        - message
+
+    ChatResponse:
+      type: object
+      properties:
+        content:
+          type: string
+        reasoning:
+          type: array
+          items:
+            type: object
+            properties:
+              step:
+                type: integer
+              message:
+                type: string
+              status:
+                type: string
+                enum: [pending, running, complete]
+        downloadUrl:
+          type: string
+          format: uri
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        avatar:
+          type: string
+          format: uri
+
+    SystemStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [operational, degraded, down]
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              status:
+                type: string
+                enum: [operational, degraded, down]
+              uptime:
+                type: string
+              responseTime:
+                type: string
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+              details:
+                type: object
+
+    Unauthorized:
+      description: Unauthorized - Invalid or missing token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Unauthorized
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Resource not found
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Internal server error
