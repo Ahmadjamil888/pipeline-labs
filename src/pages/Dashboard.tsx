@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/context/AuthContext'
 import { FileSpreadsheet, RefreshCw, Send, Plus, Brain, Database, Download, X, AlertCircle, CheckCircle, Sparkles, LogOut } from 'lucide-react'
 
