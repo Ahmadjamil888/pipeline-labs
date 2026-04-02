@@ -8,6 +8,8 @@ import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
+import ApiDocs from "./pages/ApiDocs";
+import ApiStatus from "./pages/ApiStatus";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -22,7 +24,10 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<Auth />} />
-            <Route path="/dashboard" element={
+            {/* API Routes for external API documentation and status */}
+            <Route path="/api/docs" element={<ApiDocs />} />
+            <Route path="/api/status" element={<ApiStatus />} />
+            <Route path="/dashboard/*" element={
               <ProtectedRoute>
                 <Dashboard />
               </ProtectedRoute>
