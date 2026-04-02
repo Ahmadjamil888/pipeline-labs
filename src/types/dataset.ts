@@ -12,10 +12,19 @@ export interface ColumnAnalysis {
   median?: number;
   std?: number;
   mode?: string;
+  min?: number;
+  max?: number;
+  q1?: number;
+  q3?: number;
+  skewness?: number;
+  kurtosis?: number;
+  categoryFrequencies?: Record<string, number>;
   isConstant: boolean;
   isId: boolean;
+  isEmail?: boolean;
   keep: boolean;
   scalingMethod: 'none' | 'normalize' | 'standardize';
+  warning?: string;
 }
 
 export interface DatasetState {
