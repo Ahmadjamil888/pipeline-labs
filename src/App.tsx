@@ -24,7 +24,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<Auth />} />
-            {/* API Routes for external API documentation and status */}
+            {/* SDK/API Routes - External documentation only, NOT main app functionality */}
             <Route path="/api/docs" element={<ApiDocs />} />
             <Route path="/api/status" element={<ApiStatus />} />
             <Route path="/dashboard/*" element={
