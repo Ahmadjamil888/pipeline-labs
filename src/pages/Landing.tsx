@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { SlidingLogoMarquee, type SlidingLogoMarqueeItem } from "@/components/SlidingLogoMarquee";
+import { ShaderGradientCanvas, ShaderGradient } from "@shadergradient/react";
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -421,77 +422,142 @@ function Hero() {
   const { user } = useAuth();
   const isSignedIn = !!user;
   return (
-    <div style={{ paddingTop: 64 }}>
-      {/* Text */}
-      <div style={{ padding: "108px 44px 0", maxWidth: 1400 }}>
-        <div style={{ marginBottom: 16 }}>
-          <span style={{
-            fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase",
-            color: "var(--text3)", fontFamily: T.font,
-          }}>
-            Built for teams turning raw data into model-ready infrastructure.
-          </span>
-        </div>
-        <h1 style={{
-          fontSize: "clamp(36px, 4vw, 52px)",
-          fontWeight: 300,
-          letterSpacing: "-0.045em",
-          lineHeight: 1.15,
-          color: "var(--text)",
-          maxWidth: 680,
-          marginBottom: 18,
-          fontFamily: T.font,
-        }}>
-          Redefine how machine learning teams<br />build with data.
-        </h1>
-        <p style={{
-          fontSize: 16, color: "var(--text2)", lineHeight: 1.65,
-          maxWidth: 520, fontFamily: T.font, fontWeight: 400, marginBottom: 32,
-        }}>
-          Transform raw operational data into validated, training-ready datasets with prompt-driven cleaning, schema-aware chunking, and reproducible ML workflows.
-        </p>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 60 }}>
-          {isSignedIn ? (
-            <Link to="/dashboard" style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              background: "var(--text)", color: "var(--bg)",
-              fontSize: 14, fontWeight: 500, letterSpacing: "-0.01em",
-              borderRadius: T.pill, padding: "11px 24px",
-              border: "none", cursor: "pointer", textDecoration: "none",
-              fontFamily: T.font, transition: "opacity 0.15s",
-            }}>Start building ↓</Link>
-          ) : (
-            <Link to="/auth" style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              background: "var(--text)", color: "var(--bg)",
-              fontSize: 14, fontWeight: 500, letterSpacing: "-0.01em",
-              borderRadius: T.pill, padding: "11px 24px",
-              border: "none", cursor: "pointer", textDecoration: "none",
-              fontFamily: T.font, transition: "opacity 0.15s",
-            }}>Start building ↓</Link>
-          )}
-          <a href="#how-it-works" style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            background: "transparent", color: "var(--text)",
-            fontSize: 14, fontWeight: 500,
-            borderRadius: T.pill, padding: "11px 24px",
-            border: "1px solid var(--border2)", cursor: "pointer", textDecoration: "none",
-            fontFamily: T.font, transition: "background 0.15s",
-          }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polygon points="5 3 19 12 5 21 5 3" />
-            </svg>
-            See platform flow
-          </a>
-        </div>
+    <div style={{ paddingTop: 64, position: "relative" }}>
+      {/* ShaderGradient Background - only in hero area */}
+      <div style={{ 
+        position: "absolute", 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        height: "600px", 
+        zIndex: 0,
+        overflow: "hidden"
+      }}>
+        <ShaderGradientCanvas
+          style={{ position: "absolute", inset: 0 }}
+          pixelDensity={0.7}
+          fov={40}
+        >
+          <ShaderGradient
+            animate="on"
+            axesHelper="off"
+            brightness={1.2}
+            cAzimuthAngle={180}
+            cDistance={3.39}
+            cPolarAngle={90}
+            cameraZoom={1}
+            color1="#000000"
+            color2="#343237"
+            color3="#000000"
+            destination="onCanvas"
+            embedMode="off"
+            envPreset="city"
+            format="gif"
+            frameRate={10}
+            gizmoHelper="hide"
+            grain="off"
+            lightType="3d"
+            positionX={-1.4}
+            positionY={0}
+            positionZ={0}
+            range="enabled"
+            rangeEnd={40}
+            rangeStart={0}
+            reflection={0.1}
+            rotationX={0}
+            rotationY={10}
+            rotationZ={50}
+            shader="defaults"
+            type="plane"
+            uAmplitude={1}
+            uDensity={1.3}
+            uFrequency={5.5}
+            uSpeed={0.2}
+            uStrength={1.8}
+            uTime={0}
+            wireframe={false}
+          />
+        </ShaderGradientCanvas>
+        {/* Gradient overlay for smooth transition */}
+        <div style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: "200px",
+          background: "linear-gradient(to bottom, transparent, var(--bg, #0a0a0a))",
+          pointerEvents: "none"
+        }} />
       </div>
 
-      {/* App shell */}
-      <div style={{ padding: "0 20px" }}>
-        <div style={{
-          background: "linear-gradient(145deg,#c8b89a 0%,#b0a088 30%,#907868 60%,#706050 100%)",
-          borderRadius: "14px 14px 0 0", padding: "18px 18px 0", overflow: "hidden",
-        }}>
+      {/* Content - above shader */}
+      <div style={{ position: "relative", zIndex: 1 }}>
+        {/* Text */}
+        <div style={{ padding: "108px 44px 0", maxWidth: 1400 }}>
+          <div style={{ marginBottom: 16 }}>
+            <span style={{
+              fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase",
+              color: "var(--text3)", fontFamily: T.font,
+            }}>
+              Built for teams turning raw data into model-ready infrastructure.
+            </span>
+          </div>
+          <h1 style={{
+            fontSize: "clamp(36px, 4vw, 52px)",
+            fontWeight: 300,
+            letterSpacing: "-0.045em",
+            lineHeight: 1.15,
+            color: "var(--text)",
+            maxWidth: 680,
+            marginBottom: 18,
+            fontFamily: T.font,
+          }}>
+            Redefine how machine learning teams<br />build with data.
+          </h1>
+          <p style={{
+            fontSize: 16, color: "var(--text2)", lineHeight: 1.65,
+            maxWidth: 520, fontFamily: T.font, fontWeight: 400, marginBottom: 32,
+          }}>
+            Transform raw operational data into validated, training-ready datasets with prompt-driven cleaning, schema-aware chunking, and reproducible ML workflows.
+          </p>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 60 }}>
+            {isSignedIn ? (
+              <Link to="/dashboard" style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                background: "var(--text)", color: "var(--bg)",
+                fontSize: 14, fontWeight: 500, letterSpacing: "-0.01em",
+                borderRadius: T.pill, padding: "11px 24px",
+                border: "none", cursor: "pointer", textDecoration: "none",
+                fontFamily: T.font, transition: "opacity 0.15s",
+              }}>Start building ↓</Link>
+            ) : (
+              <Link to="/auth" style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                background: "var(--text)", color: "var(--bg)",
+                fontSize: 14, fontWeight: 500, letterSpacing: "-0.01em",
+                borderRadius: T.pill, padding: "11px 24px",
+                border: "none", cursor: "pointer", textDecoration: "none",
+                fontFamily: T.font, transition: "opacity 0.15s",
+              }}>Start building ↓</Link>
+            )}
+            <a href="#how-it-works" style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              background: "transparent", color: "var(--text)",
+              fontSize: 14, fontWeight: 500,
+              borderRadius: T.pill, padding: "11px 24px",
+              border: "1px solid var(--border2)", cursor: "pointer", textDecoration: "none",
+              fontFamily: T.font, transition: "background 0.15s",
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              See platform flow
+            </a>
+          </div>
+        </div>
+
+        {/* App shell */}
+        <div style={{ padding: "0 20px", borderRadius: "14px 14px 0 0", overflow: "hidden" }}>
           <div style={{
             background: "#1a1a1a", borderRadius: "10px 10px 0 0",
             overflow: "hidden", minHeight: 260,
