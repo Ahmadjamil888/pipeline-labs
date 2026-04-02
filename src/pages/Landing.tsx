@@ -249,6 +249,18 @@ function Logo({ theme, height = 28, fallbackId = "nav-logo-fb" }: { theme: Theme
 function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) {
   const { user } = useAuth();
   const isSignedIn = !!user;
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      // Hero section is roughly 600px, navbar is 64px
+      // Switch to solid bg when scrolled past hero
+      setScrolled(window.scrollY > 500);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll(); // Check initial position
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const navItems = [
     { label: "Product", href: "#product" },
@@ -263,15 +275,16 @@ function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) 
       position: "fixed",
       top: 0, left: 0, right: 0,
       height: 64,
-      background: "var(--nav-bg, rgba(10,10,10,0.82))",
-      backdropFilter: "blur(12px)",
-      WebkitBackdropFilter: "blur(12px)",
-      borderBottom: "1px solid var(--border)",
+      background: scrolled ? "var(--nav-bg, rgba(10,10,10,0.95))" : "transparent",
+      backdropFilter: scrolled ? "blur(12px)" : "none",
+      WebkitBackdropFilter: scrolled ? "blur(12px)" : "none",
+      borderBottom: scrolled ? "1px solid var(--border)" : "1px solid transparent",
       zIndex: 100,
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
       padding: "0 24px",
+      transition: "background 0.3s ease, backdrop-filter 0.3s ease, border-bottom 0.3s ease",
     }}>
       {/* Logo */}
       <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
