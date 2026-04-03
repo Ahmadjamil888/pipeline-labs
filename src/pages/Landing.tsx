@@ -37,7 +37,7 @@ const GLOBAL_CSS = `
     --text2:   rgba(245,245,245,0.52);
     --text3:   rgba(245,245,245,0.28);
     --card:    #111111;
-    --nav-bg:  rgba(10,10,10,0.82);
+    --nav-bg:  rgba(10,10,10,0.55);
     --shadow:  0 32px 80px rgba(0,0,0,0.7);
   }
 
@@ -53,7 +53,7 @@ const GLOBAL_CSS = `
     --text2:   rgba(10,10,10,0.52);
     --text3:   rgba(10,10,10,0.32);
     --card:    #ffffff;
-    --nav-bg:  rgba(255,255,255,0.88);
+    --nav-bg:  rgba(255,255,255,0.65);
     --shadow:  0 32px 80px rgba(0,0,0,0.08);
   }
 
