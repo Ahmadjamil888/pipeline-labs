@@ -463,11 +463,11 @@ function Hero({ theme }: { theme: Theme }) {
   };
   
   return (
-    <div style={{ height: "calc(100vh - 64px)", position: "relative", display: "flex", flexDirection: "column" }}>
-      {/* ShaderGradient Background - fills entire hero area */}
+    <div style={{ paddingTop: 64, position: "relative" }}>
+      {/* ShaderGradient Background - extends up to cover navbar */}
       <div style={{ 
         position: "absolute", 
-        top: 0, 
+        top: -64, 
         left: 0, 
         right: 0, 
         bottom: 0,
@@ -531,10 +531,10 @@ function Hero({ theme }: { theme: Theme }) {
         }} />
       </div>
 
-      {/* Content - above shader - takes remaining space */}
-      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
-        {/* Text - centered vertically */}
-        <div style={{ padding: "0 44px", maxWidth: 1400, flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      {/* Content - above shader */}
+      <div style={{ position: "relative", zIndex: 1 }}>
+        {/* Text */}
+        <div style={{ padding: "108px 44px 0", maxWidth: 1400 }}>
           <div style={{ marginBottom: 16 }}>
             <span style={{
               fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase",
