@@ -21,8 +21,12 @@ export type Database = {
           created_at: string | null
           file_name: string
           id: string
+          mime_type: string | null
+          objective: string | null
+          preview_rows: Json
           row_count: number | null
           status: string | null
+          storage_path: string | null
           updated_at: string | null
           user_id: string
         }
@@ -32,8 +36,12 @@ export type Database = {
           created_at?: string | null
           file_name: string
           id?: string
+          mime_type?: string | null
+          objective?: string | null
+          preview_rows?: Json
           row_count?: number | null
           status?: string | null
+          storage_path?: string | null
           updated_at?: string | null
           user_id: string
         }
@@ -43,8 +51,12 @@ export type Database = {
           created_at?: string | null
           file_name?: string
           id?: string
+          mime_type?: string | null
+          objective?: string | null
+          preview_rows?: Json
           row_count?: number | null
           status?: string | null
+          storage_path?: string | null
           updated_at?: string | null
           user_id?: string
         }
