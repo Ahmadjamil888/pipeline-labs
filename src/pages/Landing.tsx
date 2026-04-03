@@ -15,6 +15,7 @@ type Theme = "dark" | "light";
 ───────────────────────────────────────────── */
 const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Helvetica+World&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
@@ -37,7 +38,7 @@ const GLOBAL_CSS = `
     --text2:   rgba(245,245,245,0.52);
     --text3:   rgba(245,245,245,0.28);
     --card:    #111111;
-    --nav-bg:  rgba(10,10,10,0.55);
+    --nav-bg:  transparent;
     --shadow:  0 32px 80px rgba(0,0,0,0.7);
   }
 
@@ -53,7 +54,7 @@ const GLOBAL_CSS = `
     --text2:   rgba(10,10,10,0.52);
     --text3:   rgba(10,10,10,0.32);
     --card:    #ffffff;
-    --nav-bg:  rgba(255,255,255,0.65);
+    --nav-bg:  transparent;
     --shadow:  0 32px 80px rgba(0,0,0,0.08);
   }
 
@@ -139,6 +140,7 @@ function GlobalStyle() {
 ───────────────────────────────────────────── */
 const T = {
   font: "'Helvetica Neue', 'HelveticaNeue', Helvetica, Arial, sans-serif",
+  buttonFont: "'Helvetica World', 'Helvetica Neue', Helvetica, Arial, sans-serif",
   mono: "'Source Code Pro', 'Fira Code', 'Consolas', monospace",
   pill: "9999px",
 };
@@ -253,12 +255,11 @@ function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) 
 
   useEffect(() => {
     const handleScroll = () => {
-      // Hero section is roughly 600px, navbar is 64px
-      // Switch to solid bg when scrolled past hero
-      setScrolled(window.scrollY > 500);
+      // Switch to blurred bg when scrolled past hero (100vh area)
+      setScrolled(window.scrollY > window.innerHeight - 64);
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll(); // Check initial position
+    handleScroll();
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
@@ -275,7 +276,7 @@ function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) 
       position: "fixed",
       top: 0, left: 0, right: 0,
       height: 64,
-      background: scrolled ? "var(--nav-bg, rgba(10,10,10,0.95))" : "transparent",
+      background: scrolled ? "var(--nav-bg)" : "transparent",
       backdropFilter: scrolled ? "blur(12px)" : "none",
       WebkitBackdropFilter: scrolled ? "blur(12px)" : "none",
       borderBottom: scrolled ? "1px solid var(--border)" : "1px solid transparent",
@@ -379,7 +380,7 @@ function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) 
             padding: "11px 24px",
             borderRadius: T.pill,
             border: "1px solid var(--border2)",
-            fontFamily: T.font,
+            fontFamily: T.buttonFont,
             transition: "all 0.15s",
             background: "transparent",
             display: "inline-flex",
@@ -407,7 +408,7 @@ function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) 
             textDecoration: "none",
             padding: "11px 24px",
             borderRadius: T.pill,
-            fontFamily: T.font,
+            fontFamily: T.buttonFont,
             transition: "opacity 0.15s",
             display: "inline-flex",
             alignItems: "center",
@@ -438,16 +439,16 @@ function Hero({ theme }: { theme: Theme }) {
   // Shader props based on theme
   const isLight = theme === "light";
   const shaderProps = isLight ? {
-    brightness: 1.5,
+    brightness: 1.2,
     cDistance: 3.6,
-    color1: "#fff",
-    color2: "#fefaff",
-    color3: "#fffbed",
+    color1: "#fcffff",
+    color2: "#fdfcff",
+    color3: "#000000",
     fov: 45,
-    pixelDensity: 3,
-    uDensity: 0.8,
-    uSpeed: 0.1,
-    uStrength: 1.5,
+    pixelDensity: 2.3,
+    uDensity: 0.6,
+    uSpeed: 0.4,
+    uStrength: 0.8,
   } : {
     brightness: 1.2,
     cDistance: 3.39,
@@ -462,14 +463,14 @@ function Hero({ theme }: { theme: Theme }) {
   };
   
   return (
-    <div style={{ paddingTop: 64, position: "relative" }}>
-      {/* ShaderGradient Background - only in hero area */}
+    <div style={{ height: "calc(100vh - 64px)", position: "relative", display: "flex", flexDirection: "column" }}>
+      {/* ShaderGradient Background - fills entire hero area */}
       <div style={{ 
         position: "absolute", 
         top: 0, 
         left: 0, 
         right: 0, 
-        height: "600px", 
+        bottom: 0,
         zIndex: 0,
         overflow: "hidden"
       }}>
@@ -495,12 +496,12 @@ function Hero({ theme }: { theme: Theme }) {
             format="gif"
             frameRate={10}
             gizmoHelper="hide"
-            grain="off"
+            grain={isLight ? "on" : "off"}
             lightType="3d"
             positionX={-1.4}
             positionY={0}
             positionZ={0}
-            range="enabled"
+            range={isLight ? "disabled" : "enabled"}
             rangeEnd={40}
             rangeStart={0}
             reflection={0.1}
@@ -530,10 +531,10 @@ function Hero({ theme }: { theme: Theme }) {
         }} />
       </div>
 
-      {/* Content - above shader */}
-      <div style={{ position: "relative", zIndex: 1 }}>
-        {/* Text */}
-        <div style={{ padding: "108px 44px 0", maxWidth: 1400 }}>
+      {/* Content - above shader - takes remaining space */}
+      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
+        {/* Text - centered vertically */}
+        <div style={{ padding: "0 44px", maxWidth: 1400, flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div style={{ marginBottom: 16 }}>
             <span style={{
               fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase",
@@ -560,7 +561,7 @@ function Hero({ theme }: { theme: Theme }) {
           }}>
             Transform raw operational data into validated, training-ready datasets with prompt-driven cleaning, schema-aware chunking, and reproducible ML workflows.
           </p>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 60 }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 0 }}>
             {isSignedIn ? (
               <Link to="/dashboard" style={{
                 display: "inline-flex", alignItems: "center", gap: 8,
@@ -568,7 +569,7 @@ function Hero({ theme }: { theme: Theme }) {
                 fontSize: 14, fontWeight: 500, letterSpacing: "-0.01em",
                 borderRadius: T.pill, padding: "11px 24px",
                 border: "none", cursor: "pointer", textDecoration: "none",
-                fontFamily: T.font, transition: "opacity 0.15s",
+                fontFamily: T.buttonFont, transition: "opacity 0.15s",
               }}>Start building ↓</Link>
             ) : (
               <Link to="/auth" style={{
@@ -577,7 +578,7 @@ function Hero({ theme }: { theme: Theme }) {
                 fontSize: 14, fontWeight: 500, letterSpacing: "-0.01em",
                 borderRadius: T.pill, padding: "11px 24px",
                 border: "none", cursor: "pointer", textDecoration: "none",
-                fontFamily: T.font, transition: "opacity 0.15s",
+                fontFamily: T.buttonFont, transition: "opacity 0.15s",
               }}>Start building ↓</Link>
             )}
             <a href="#how-it-works" style={{
@@ -586,7 +587,7 @@ function Hero({ theme }: { theme: Theme }) {
               fontSize: 14, fontWeight: 500,
               borderRadius: T.pill, padding: "11px 24px",
               border: "1px solid var(--border2)", cursor: "pointer", textDecoration: "none",
-              fontFamily: T.font, transition: "background 0.15s",
+              fontFamily: T.buttonFont, transition: "background 0.15s",
             }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <polygon points="5 3 19 12 5 21 5 3" />
