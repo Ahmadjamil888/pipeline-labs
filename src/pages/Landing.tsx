@@ -431,9 +431,36 @@ function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) 
 /* ─────────────────────────────────────────────
    HERO
 ───────────────────────────────────────────── */
-function Hero() {
+function Hero({ theme }: { theme: Theme }) {
   const { user } = useAuth();
   const isSignedIn = !!user;
+  
+  // Shader props based on theme
+  const isLight = theme === "light";
+  const shaderProps = isLight ? {
+    brightness: 1.5,
+    cDistance: 3.6,
+    color1: "#fff",
+    color2: "#fefaff",
+    color3: "#fffbed",
+    fov: 45,
+    pixelDensity: 3,
+    uDensity: 0.8,
+    uSpeed: 0.1,
+    uStrength: 1.5,
+  } : {
+    brightness: 1.2,
+    cDistance: 3.39,
+    color1: "#000000",
+    color2: "#343237",
+    color3: "#000000",
+    fov: 40,
+    pixelDensity: 0.7,
+    uDensity: 1.3,
+    uSpeed: 0.2,
+    uStrength: 1.8,
+  };
+  
   return (
     <div style={{ paddingTop: 64, position: "relative" }}>
       {/* ShaderGradient Background - only in hero area */}
@@ -448,20 +475,20 @@ function Hero() {
       }}>
         <ShaderGradientCanvas
           style={{ position: "absolute", inset: 0 }}
-          pixelDensity={0.7}
-          fov={40}
+          pixelDensity={shaderProps.pixelDensity}
+          fov={shaderProps.fov}
         >
           <ShaderGradient
             animate="on"
             axesHelper="off"
-            brightness={1.2}
+            brightness={shaderProps.brightness}
             cAzimuthAngle={180}
-            cDistance={3.39}
+            cDistance={shaderProps.cDistance}
             cPolarAngle={90}
             cameraZoom={1}
-            color1="#000000"
-            color2="#343237"
-            color3="#000000"
+            color1={shaderProps.color1}
+            color2={shaderProps.color2}
+            color3={shaderProps.color3}
             destination="onCanvas"
             embedMode="off"
             envPreset="city"
@@ -483,10 +510,10 @@ function Hero() {
             shader="defaults"
             type="plane"
             uAmplitude={1}
-            uDensity={1.3}
+            uDensity={shaderProps.uDensity}
             uFrequency={5.5}
-            uSpeed={0.2}
-            uStrength={1.8}
+            uSpeed={shaderProps.uSpeed}
+            uStrength={shaderProps.uStrength}
             uTime={0}
             wireframe={false}
           />
