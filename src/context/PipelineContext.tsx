@@ -1,4 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import type { ColumnAnalysis, DatasetState, PipelineStep, AIReasoning } from '@/types/dataset';
 import { parseCSV, parseJSON, analyzeColumns, cleanData, transformData, toLLMReady } from '@/lib/dataProcessing';
 import { getAIReasonings } from '@/lib/aiReasoning';
@@ -29,24 +32,73 @@ const emptyState: DatasetState = {
 };
 
 export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
   const [step, setStep] = useState<PipelineStep>('upload');
   const [dataset, setDataset] = useState<DatasetState>(emptyState);
   const [fileName, setFileName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleUpload = useCallback(async (file: File) => {
+    if (!user) {
+      toast.error('Please sign in to upload datasets');
+      return;
+    }
+
     setIsProcessing(true);
     try {
+      // Parse file locally first
       const text = await file.text();
       const isJSON = file.name.endsWith('.json');
       const rawData = isJSON ? parseJSON(text) : parseCSV(text);
+      
+      // Upload file to Supabase Storage
+      const fileExt = file.name.split('.').pop() || 'csv';
+      const filePath = `${user.id}/${Date.now()}_${file.name}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('datasets')
+        .upload(filePath, file, {
+          contentType: file.type || 'text/csv',
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('datasets')
+        .getPublicUrl(filePath);
+
+      // Create dataset record in database
+      const { data: datasetRecord, error: dbError } = await supabase
+        .from('datasets')
+        .insert({
+          user_id: user.id,
+          file_name: file.name,
+          file_type: fileExt,
+          storage_path: filePath,
+          public_url: publicUrl,
+          row_count: rawData.length,
+          column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
+          status: 'uploaded',
+          column_analysis: null
+        })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
       setFileName(file.name);
       setDataset({ ...emptyState, rawData });
       setStep('analyze');
+      toast.success('Dataset uploaded successfully!');
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      toast.error(error.message || 'Failed to upload dataset');
     } finally {
       setIsProcessing(false);
     }
-  }, []);
+  }, [user]);
 
   const runAnalysis = useCallback(async () => {
     setIsProcessing(true);

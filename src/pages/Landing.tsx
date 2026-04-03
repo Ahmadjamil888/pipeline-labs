@@ -475,6 +475,7 @@ function Hero({ theme }: { theme: Theme }) {
         overflow: "hidden"
       }}>
         <ShaderGradientCanvas
+          key={theme}
           style={{ position: "absolute", inset: 0 }}
           pixelDensity={shaderProps.pixelDensity}
           fov={shaderProps.fov}
@@ -598,7 +599,7 @@ function Hero({ theme }: { theme: Theme }) {
         </div>
 
         {/* App shell */}
-        <div style={{ padding: "0 20px", borderRadius: "14px 14px 0 0", overflow: "hidden" }}>
+        <div style={{ marginTop: 64, padding: "0 20px", borderRadius: "14px 14px 0 0", overflow: "hidden" }}>
           <div style={{
             background: "#1a1a1a", borderRadius: "10px 10px 0 0",
             overflow: "hidden", minHeight: 260,
