@@ -38,16 +38,23 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for profiles
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+
 CREATE POLICY "Users can view own profile" 
     ON public.profiles FOR SELECT 
+    TO authenticated
     USING (auth.uid() = id);
 
 CREATE POLICY "Users can update own profile" 
     ON public.profiles FOR UPDATE 
+    TO authenticated
     USING (auth.uid() = id);
 
 CREATE POLICY "Users can insert own profile" 
     ON public.profiles FOR INSERT 
+    TO authenticated
     WITH CHECK (auth.uid() = id);
 
 -- Trigger to create profile on signup
@@ -95,20 +102,29 @@ CREATE TABLE IF NOT EXISTS public.datasets (
 ALTER TABLE public.datasets ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for datasets
+DROP POLICY IF EXISTS "Users can view own datasets" ON public.datasets;
+DROP POLICY IF EXISTS "Users can create own datasets" ON public.datasets;
+DROP POLICY IF EXISTS "Users can update own datasets" ON public.datasets;
+DROP POLICY IF EXISTS "Users can delete own datasets" ON public.datasets;
+
 CREATE POLICY "Users can view own datasets" 
     ON public.datasets FOR SELECT 
+    TO authenticated
     USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can create own datasets" 
     ON public.datasets FOR INSERT 
+    TO authenticated
     WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update own datasets" 
     ON public.datasets FOR UPDATE 
+    TO authenticated
     USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own datasets" 
     ON public.datasets FOR DELETE 
+    TO authenticated
     USING (auth.uid() = user_id);
 
 -- Index for faster queries
@@ -131,22 +147,47 @@ CREATE TABLE IF NOT EXISTS public.dataset_chats (
 -- Enable RLS
 ALTER TABLE public.dataset_chats ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies
+-- RLS Policies - using subquery to check dataset ownership
+DROP POLICY IF EXISTS "Users can view own dataset chats" ON public.dataset_chats;
+DROP POLICY IF EXISTS "Users can insert own dataset chats" ON public.dataset_chats;
+DROP POLICY IF EXISTS "Users can update own dataset chats" ON public.dataset_chats;
+DROP POLICY IF EXISTS "Users can delete own dataset chats" ON public.dataset_chats;
+
 CREATE POLICY "Users can view own dataset chats" 
     ON public.dataset_chats FOR SELECT 
-    USING (auth.uid() = user_id);
+    TO authenticated
+    USING (EXISTS (
+        SELECT 1 FROM public.datasets 
+        WHERE datasets.id = dataset_chats.dataset_id 
+        AND datasets.user_id = auth.uid()
+    ));
 
 CREATE POLICY "Users can insert own dataset chats" 
     ON public.dataset_chats FOR INSERT 
-    WITH CHECK (auth.uid() = user_id);
+    TO authenticated
+    WITH CHECK (EXISTS (
+        SELECT 1 FROM public.datasets 
+        WHERE datasets.id = dataset_chats.dataset_id 
+        AND datasets.user_id = auth.uid()
+    ));
 
 CREATE POLICY "Users can update own dataset chats" 
     ON public.dataset_chats FOR UPDATE 
-    USING (auth.uid() = user_id);
+    TO authenticated
+    USING (EXISTS (
+        SELECT 1 FROM public.datasets 
+        WHERE datasets.id = dataset_chats.dataset_id 
+        AND datasets.user_id = auth.uid()
+    ));
 
 CREATE POLICY "Users can delete own dataset chats" 
     ON public.dataset_chats FOR DELETE 
-    USING (auth.uid() = user_id);
+    TO authenticated
+    USING (EXISTS (
+        SELECT 1 FROM public.datasets 
+        WHERE datasets.id = dataset_chats.dataset_id 
+        AND datasets.user_id = auth.uid()
+    ));
 
 CREATE INDEX IF NOT EXISTS dataset_chats_user_id_idx ON public.dataset_chats(user_id);
 CREATE INDEX IF NOT EXISTS dataset_chats_dataset_id_idx ON public.dataset_chats(dataset_id);
@@ -172,20 +213,29 @@ CREATE TABLE IF NOT EXISTS public.trained_models (
 ALTER TABLE public.trained_models ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view own trained models" ON public.trained_models;
+DROP POLICY IF EXISTS "Users can insert own trained models" ON public.trained_models;
+DROP POLICY IF EXISTS "Users can update own trained models" ON public.trained_models;
+DROP POLICY IF EXISTS "Users can delete own trained models" ON public.trained_models;
+
 CREATE POLICY "Users can view own trained models" 
     ON public.trained_models FOR SELECT 
+    TO authenticated
     USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can insert own trained models" 
     ON public.trained_models FOR INSERT 
+    TO authenticated
     WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update own trained models" 
     ON public.trained_models FOR UPDATE 
+    TO authenticated
     USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own trained models" 
     ON public.trained_models FOR DELETE 
+    TO authenticated
     USING (auth.uid() = user_id);
 
 CREATE INDEX IF NOT EXISTS trained_models_user_id_idx ON public.trained_models(user_id);
@@ -248,44 +298,57 @@ CREATE TRIGGER handle_trained_models_updated_at
 -- =====================================================
 
 -- Policies for 'datasets' bucket
+DROP POLICY IF EXISTS "Users can upload own datasets" ON storage.objects;
+DROP POLICY IF EXISTS "Users can view own datasets" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete own datasets" ON storage.objects;
+DROP POLICY IF EXISTS "Users can upload own avatar" ON storage.objects;
+DROP POLICY IF EXISTS "Anyone can view avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete own avatar" ON storage.objects;
+
 CREATE POLICY "Users can upload own datasets"
 ON storage.objects FOR INSERT
+TO authenticated
 WITH CHECK (
     bucket_id = 'datasets' 
-    AND auth.uid()::text = (storage.foldername(name))[1]
+    AND (storage.foldername(name))[1] = auth.uid()::text
 );
 
 CREATE POLICY "Users can view own datasets"
 ON storage.objects FOR SELECT
+TO authenticated
 USING (
     bucket_id = 'datasets' 
-    AND auth.uid()::text = (storage.foldername(name))[1]
+    AND (storage.foldername(name))[1] = auth.uid()::text
 );
 
 CREATE POLICY "Users can delete own datasets"
 ON storage.objects FOR DELETE
+TO authenticated
 USING (
     bucket_id = 'datasets' 
-    AND auth.uid()::text = (storage.foldername(name))[1]
+    AND (storage.foldername(name))[1] = auth.uid()::text
 );
 
 -- Policies for 'avatars' bucket (public read)
 CREATE POLICY "Users can upload own avatar"
 ON storage.objects FOR INSERT
+TO authenticated
 WITH CHECK (
     bucket_id = 'avatars' 
-    AND auth.uid()::text = (storage.foldername(name))[1]
+    AND (storage.foldername(name))[1] = auth.uid()::text
 );
 
 CREATE POLICY "Anyone can view avatars"
 ON storage.objects FOR SELECT
+TO authenticated, anon
 USING (bucket_id = 'avatars');
 
 CREATE POLICY "Users can delete own avatar"
 ON storage.objects FOR DELETE
+TO authenticated
 USING (
     bucket_id = 'avatars' 
-    AND auth.uid()::text = (storage.foldername(name))[1]
+    AND (storage.foldername(name))[1] = auth.uid()::text
 );
 
 -- =====================================================
