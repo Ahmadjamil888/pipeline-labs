@@ -781,13 +781,11 @@ Provide a complete analysis and cleaning plan.`
         }
       }
 
-      // Update dataset in Supabase
+      // Update dataset in Supabase - only use existing columns
       const { error: updateError } = await supabase
         .from('datasets')
         .update({
           preview_rows: cleanedData.slice(0, 20),
-          cleaned_data_preview: cleanedData.slice(0, 100),
-          cleaning_actions: appliedActions,
           status: 'cleaned',
           row_count: cleanedData.length,
           updated_at: new Date().toISOString()
