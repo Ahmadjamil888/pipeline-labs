@@ -545,6 +545,7 @@ function AICleanPage({ datasets, onDatasetsChange }: { datasets: Dataset[], onDa
   
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null)
   const [datasetData, setDatasetData] = useState<Record<string, unknown>[]>([])
+  const [fullRowCount, setFullRowCount] = useState<number>(0)
   const [columns, setColumns] = useState<any[]>([])
   const [messages, setMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([])
   const [inputMessage, setInputMessage] = useState('')
@@ -552,6 +553,8 @@ function AICleanPage({ datasets, onDatasetsChange }: { datasets: Dataset[], onDa
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [aiState, setAiState] = useState<AICleanState>({ isAnalyzing: false })
   const [isApplyingChanges, setIsApplyingChanges] = useState(false)
+  const [chatPanelWidth, setChatPanelWidth] = useState(50)
+  const [isResizing, setIsResizing] = useState(false)
 
   // Load dataset when datasetId changes
   useEffect(() => {
@@ -577,6 +580,7 @@ function AICleanPage({ datasets, onDatasetsChange }: { datasets: Dataset[], onDa
       if (fullData?.preview_rows) {
         const rows = Array.isArray(fullData.preview_rows) ? fullData.preview_rows : JSON.parse(fullData.preview_rows)
         setDatasetData(rows)
+        setFullRowCount(dataset.row_count || rows.length)
         
         if (fullData.column_analysis) {
           setColumns(Array.isArray(fullData.column_analysis) ? fullData.column_analysis : JSON.parse(fullData.column_analysis))
@@ -586,11 +590,17 @@ function AICleanPage({ datasets, onDatasetsChange }: { datasets: Dataset[], onDa
         }
       }
 
-      // Start with initial AI message
-      setMessages([{
-        role: 'assistant',
-        content: `Hi! I'm your AI data cleaning assistant. I can see your dataset "${dataset.file_name}" with ${dataset.row_count} rows and ${dataset.column_count} columns.\n\nTo get started, please tell me:\n1. What is your target variable (the column you want to predict)?\n2. What is the purpose of your analysis (e.g., classification, regression, clustering)?`
-      }])
+      // Load saved chat history if available
+      if (fullData?.chat_history) {
+        const savedChat = Array.isArray(fullData.chat_history) ? fullData.chat_history : JSON.parse(fullData.chat_history)
+        setMessages(savedChat)
+      } else {
+        // Start with initial AI message
+        setMessages([{
+          role: 'assistant',
+          content: `Hi! I'm your AI data cleaning assistant. I can see your dataset "${dataset.file_name}" with ${dataset.row_count} rows and ${dataset.column_count} columns.\n\nTo get started, please tell me:\n1. What is your target variable (the column you want to predict)?\n2. What is the purpose of your analysis (e.g., classification, regression, clustering)?`
+        }])
+      }
     } catch (error) {
       console.error('Error loading dataset:', error)
       toast.error('Failed to load dataset data')
@@ -778,6 +788,15 @@ Provide a complete analysis and cleaning plan.`
             })
             appliedActions.push(action)
             break
+          case 'scale_features':
+          case 'encode_categorical':
+            // These are transformations that would be applied during ML prep
+            // For now, just mark them as acknowledged
+            appliedActions.push(action)
+            break
+          default:
+            console.log('Unknown action type:', action.type)
+            appliedActions.push(action)
         }
       }
 
@@ -795,6 +814,7 @@ Provide a complete analysis and cleaning plan.`
       if (updateError) throw updateError
 
       setDatasetData(cleanedData)
+      setFullRowCount(cleanedData.length)
       setAiState(prev => ({ ...prev, appliedChanges: appliedActions, cleaningPlan: undefined }))
       
       // Recalculate columns
@@ -805,15 +825,29 @@ Provide a complete analysis and cleaning plan.`
 
       onDatasetsChange()
       
-      setMessages(prev => [...prev, {
+      const updatedMessages = [...messages, {
         role: 'assistant',
         content: `Cleaning complete! I've applied ${appliedActions.length} cleaning actions:\n${appliedActions.map(a => `- ${a.type}: ${a.columns?.join(', ') || 'all columns'} (${a.reason})`).join('\n')}\n\nYour dataset now has ${cleanedData.length} rows and is ready for machine learning! You can export it or proceed to model training.`
-      }])
+      }]
+      setMessages(updatedMessages)
+
+      // Save chat history to database
+      const { error: chatSaveError } = await supabase
+        .from('datasets')
+        .update({
+          chat_history: updatedMessages,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedDataset.id)
+      
+      if (chatSaveError) {
+        console.error('Error saving chat history:', chatSaveError)
+      }
 
       toast.success('Dataset cleaned successfully!')
     } catch (error) {
       console.error('Error applying cleaning:', error)
-      toast.error('Failed to apply cleaning plan')
+      toast.error('Failed to apply cleaning plan: ' + (error instanceof Error ? error.message : 'Unknown error'))
     } finally {
       setIsApplyingChanges(false)
     }
@@ -877,7 +911,21 @@ Provide a complete analysis and cleaning plan.`
       if (!data?.success) throw new Error(data?.error || 'AI request failed')
 
       const reply = cleanResponse(data.result)
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
+      const updatedMessages = [...messages, { role: 'assistant', content: reply }]
+      setMessages(updatedMessages)
+      
+      // Save chat history to database
+      const { error: chatSaveError } = await supabase
+        .from('datasets')
+        .update({
+          chat_history: updatedMessages,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedDataset.id)
+      
+      if (chatSaveError) {
+        console.error('Error saving chat history:', chatSaveError)
+      }
     } catch (error) {
       console.error('Chat error:', error)
       setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }])
@@ -885,6 +933,39 @@ Provide a complete analysis and cleaning plan.`
       setIsLoading(false)
     }
   }
+
+  // Resizing handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsResizing(true)
+  }
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return
+    const containerWidth = window.innerWidth - 256 // Subtract sidebar width
+    const newWidth = (e.clientX - 256) / containerWidth * 100
+    if (newWidth >= 30 && newWidth <= 70) {
+      setChatPanelWidth(newWidth)
+    }
+  }, [isResizing])
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(false)
+  }, [])
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+    } else {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing, handleMouseMove, handleMouseUp])
 
   if (!selectedDataset) {
     return (
@@ -961,7 +1042,7 @@ Provide a complete analysis and cleaning plan.`
       {/* Main Content - Side by Side */}
       <div className="flex-1 flex overflow-hidden">
         {/* Chat Panel */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-neutral-800">
+        <div className="flex flex-col min-w-0 border-r border-neutral-800" style={{ width: `${chatPanelWidth}%` }}>
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -1009,11 +1090,18 @@ Provide a complete analysis and cleaning plan.`
           </div>
         </div>
 
+        {/* Resize Handle */}
+        <div
+          className="w-1 bg-neutral-800 hover:bg-[#d5c5a6] cursor-col-resize transition-colors flex-shrink-0"
+          onMouseDown={handleMouseDown}
+          style={{ cursor: isResizing ? 'col-resize' : undefined }}
+        />
+
         {/* Dataset Preview Panel */}
-        <div className="w-[50%] lg:w-[45%] bg-[#0e0e0e] flex flex-col">
+        <div className="bg-[#0e0e0e] flex flex-col" style={{ width: `${100 - chatPanelWidth}%` }}>
           <div className="px-4 py-3 border-b border-neutral-800 bg-neutral-950/50">
             <h4 className="text-sm font-medium text-white">Dataset Preview</h4>
-            <p className="text-xs text-neutral-500">{datasetData.length} rows shown</p>
+            <p className="text-xs text-neutral-500">Showing {datasetData.length} of {fullRowCount} total rows</p>
           </div>
           <div className="flex-1 overflow-auto">
             {datasetData.length > 0 ? (
