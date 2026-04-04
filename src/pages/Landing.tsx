@@ -482,7 +482,7 @@ function Hero({ theme }: { theme: Theme }) {
         >
           <ShaderGradient
             animate="on"
-            axesHelper="off"
+            
             brightness={shaderProps.brightness}
             cAzimuthAngle={180}
             cDistance={shaderProps.cDistance}
