@@ -1947,10 +1947,15 @@ export default function Dashboard() {
       console.log('[DEBUG] Storage upload success:', uploadData)
 
       console.log('[DEBUG] Inserting dataset record:', { user_id: user.id, file_name: file.name, rows: rawData.length })
-      const { error: insertError } = await supabase
+      
+      // Get fresh user to ensure auth token is current
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      if (!currentUser) throw new Error('Not authenticated')
+      
+      const { data: insertData, error: insertError } = await supabase
         .from('datasets')
-        .insert({
-          user_id: user.id,
+        .insert([{
+          user_id: currentUser.id,
           file_name: file.name,
           mime_type: contentType,
           storage_path: filePath,
@@ -1958,14 +1963,15 @@ export default function Dashboard() {
           column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
           status: 'uploaded',
           preview_rows: rawData.slice(0, 20),
-        })
+        }])
 
       if (insertError) {
         console.error('[DEBUG] DB insert error:', insertError)
-        // Clean up uploaded file
         await supabase.storage.from('datasets').remove([filePath])
         throw new Error(`Database insert failed: ${insertError.message}`)
       }
+      
+      console.log('[DEBUG] Insert success:', insertData)
 
       toast.success(`Dataset "${file.name}" uploaded successfully (${rawData.length} rows)`)
       await loadDatasets()
