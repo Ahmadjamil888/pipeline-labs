@@ -52,7 +52,7 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const rawData = isJSON ? parseJSON(text) : parseCSV(text);
       
       // Upload file to Supabase Storage
-      const fileExt = file.name.split('.').pop() || 'csv';
+      const filePath = `${user.id}/${Date.now()}_${file.name}`;
       
       const { error: uploadError } = await supabase.storage
         .from('datasets')
@@ -62,11 +62,6 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         });
 
       if (uploadError) throw uploadError;
-
-      // Get the public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('datasets')
-        .getPublicUrl(filePath);
 
       // Create dataset record in database
       const { data: datasetRecord, error: dbError } = await supabase
