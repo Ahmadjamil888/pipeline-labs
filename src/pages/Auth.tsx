@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -80,25 +81,6 @@ export default function Auth() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  // Check for auth callback (OAuth)
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (hash && hash.includes("access_token")) {
-      handleAuthCallback();
-    }
-  }, []);
-
-  const handleAuthCallback = async () => {
-    setLoading(true);
-    const { error } = await supabase.auth.exchangeCodeForSession(window.location.hash);
-    if (error) {
-      setError("Authentication failed. Please try again.");
-    } else {
-      navigate("/dashboard");
-    }
-    setLoading(false);
-  };
-
   // Redirect if already signed in
   useEffect(() => {
     if (user) {
@@ -136,13 +118,32 @@ export default function Auth() {
   };
 
   const handleGoogleAuth = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth`,
-      },
-    });
-    if (error) setError(error.message);
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: `${window.location.origin}/auth`,
+        extraParams: {
+          prompt: "select_account",
+        },
+      });
+
+      if (result.error) {
+        setError(result.error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (result.redirected) return;
+
+      navigate("/dashboard");
+    } catch (err: any) {
+      setError(err?.message || "Google sign-in failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (loading && !email && !password) {

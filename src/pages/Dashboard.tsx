@@ -5,6 +5,7 @@ import { useNavigate, useLocation, Routes, Route, Link } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/context/AuthContext'
 import { toast } from 'sonner'
+import { parseCSV, parseJSON } from '@/lib/dataProcessing'
 
 const HF = "'Inter', sans-serif"
 
@@ -522,12 +523,14 @@ function DatasetsPage({
 
 // Chat/AI Assistant Page
 function ChatPage() {
+  const location = useLocation()
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [messages, setMessages] = useState([
     { role: 'assistant', content: 'Hi! I\'m your AI data assistant. Upload a dataset or ask me to help clean and prepare your data for machine learning training.' }
   ])
+  const datasetId = new URLSearchParams(location.search).get('dataset')
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -541,18 +544,63 @@ function ChatPage() {
     if (!message.trim() || isLoading) return
 
     const userMessage = message.trim()
+    const nextConversation = [...messages, { role: 'user' as const, content: userMessage }].slice(-6)
     setMessage('')
     setMessages(prev => [...prev, { role: 'user', content: userMessage }])
     setIsLoading(true)
 
-    // Simulate AI response - in production, this would call your AI backend
-    setTimeout(() => {
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: 'I can help you clean that dataset! I\'ll remove duplicates, handle missing values, and standardize the format for ML training. Would you like me to proceed with the full cleaning pipeline?' 
+    try {
+      let datasetContext = ''
+
+      if (datasetId) {
+        const { data: dataset, error: datasetError } = await supabase
+          .from('datasets')
+          .select('file_name, preview_rows, objective, row_count, column_count')
+          .eq('id', datasetId)
+          .single()
+
+        if (datasetError) throw datasetError
+
+        datasetContext = [
+          `Dataset: ${dataset.file_name}`,
+          `Rows: ${dataset.row_count ?? 0}`,
+          `Columns: ${dataset.column_count ?? 0}`,
+          `Objective: ${dataset.objective || 'Not provided yet'}`,
+          `Preview rows: ${JSON.stringify(dataset.preview_rows).slice(0, 3000)}`,
+        ].join('\n')
+      }
+
+      const conversationContext = nextConversation
+        .map((entry) => `${entry.role.toUpperCase()}: ${entry.content}`)
+        .join('\n')
+
+      const { data, error } = await supabase.functions.invoke('ai-inference', {
+        body: {
+          systemPrompt: 'You are Pipeline Labs AI. Give concise, practical guidance for dataset cleaning, feature engineering, model training preparation, and validation. If dataset context is present, ground your answer in it. Never pretend a transformation has already run unless the user explicitly asked for it and you state it as a recommendation.',
+          prompt: `${datasetContext ? `${datasetContext}\n\n` : ''}Conversation:\n${conversationContext}\n\nAnswer the latest user request clearly and specifically.`,
+        },
+      })
+
+      if (error) throw error
+      if (!data?.success) throw new Error(data?.error || 'AI request failed')
+
+      const reply = typeof data.result === 'string' ? data.result.trim() : ''
+      if (!reply) throw new Error('AI returned an empty response')
+
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: reply,
       }])
+    } catch (error) {
+      console.error('AI chat error:', error)
+      toast.error('AI service is unavailable right now')
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'I hit a temporary AI error while processing your request. Please try again in a moment.',
+      }])
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
   }
 
   return (
@@ -565,7 +613,7 @@ function ChatPage() {
           </div>
           <div>
             <h3 className="font-medium text-white">AI Data Assistant</h3>
-            <p className="text-xs text-neutral-500">Powered by GPT-4o</p>
+            <p className="text-xs text-neutral-500">Powered by Lovable AI</p>
           </div>
         </div>
       </div>
@@ -886,7 +934,7 @@ export default function Dashboard() {
         id: d.id,
         name: d.file_name,
         file_name: d.file_name,
-        file_type: d.file_type || d.file_name?.split('.').pop(),
+          file_type: d.mime_type || d.file_name?.split('.').pop(),
         row_count: d.row_count || 0,
         column_count: d.column_count || 0,
         status: d.status || 'uploaded',
@@ -921,36 +969,51 @@ export default function Dashboard() {
     setIsUploading(true)
     
     try {
-      // Convert file to base64
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => {
-          const result = reader.result as string
-          const base64Data = result.split(',')[1]
-          resolve(base64Data)
-        }
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
+      const lowerFileName = file.name.toLowerCase()
+      const isJson = lowerFileName.endsWith('.json')
+      const isCsv = lowerFileName.endsWith('.csv')
 
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          file: { name: file.name, type: file.type || 'text/csv', data: base64 },
-          userId: user.id,
+      if (!isJson && !isCsv) {
+        throw new Error('Only CSV and JSON datasets are supported right now.')
+      }
+
+      const fileText = await file.text()
+      const rawData = isJson ? parseJSON(fileText) : parseCSV(fileText)
+      const filePath = `${user.id}/${Date.now()}_${file.name}`
+      const contentType = file.type || (isJson ? 'application/json' : 'text/csv')
+
+      const { error: uploadError } = await supabase.storage
+        .from('datasets')
+        .upload(filePath, file, {
+          contentType,
+          upsert: true,
         })
-      })
 
-      if (!res.ok) throw new Error('Upload failed')
+      if (uploadError) throw uploadError
 
-      const result = await res.json()
-      
+      const { error: insertError } = await supabase
+        .from('datasets')
+        .insert({
+          user_id: user.id,
+          file_name: file.name,
+          mime_type: contentType,
+          storage_path: filePath,
+          row_count: rawData.length,
+          column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
+          status: 'uploaded',
+          preview_rows: JSON.parse(JSON.stringify(rawData.slice(0, 20))),
+        })
+
+      if (insertError) {
+        await supabase.storage.from('datasets').remove([filePath])
+        throw insertError
+      }
+
       toast.success('Dataset uploaded successfully')
       await loadDatasets()
     } catch (error) {
       console.error('Upload error:', error)
-      toast.error('Failed to upload dataset')
+      toast.error(error instanceof Error ? error.message : 'Failed to upload dataset')
     } finally {
       setIsUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -991,7 +1054,7 @@ export default function Dashboard() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".csv,.xlsx,.xls,.json,.parquet,.txt,.pdf"
+        accept=".csv,.json"
         onChange={handleFileSelect}
         className="hidden"
       />
