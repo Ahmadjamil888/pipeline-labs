@@ -75,13 +75,12 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         .insert({
           user_id: user.id,
           file_name: file.name,
-          file_type: fileExt,
+          mime_type: file.type || 'text/csv',
           storage_path: filePath,
-          public_url: publicUrl,
           row_count: rawData.length,
           column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
           status: 'uploaded',
-          column_analysis: null
+          preview_rows: JSON.parse(JSON.stringify(rawData.slice(0, 20))),
         })
         .select()
         .single();
