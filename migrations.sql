@@ -389,3 +389,99 @@ ORDER BY tablename, policyname;
 -- 
 -- 4. Deploy your app!
 --
+
+
+--2 migrations second
+-- =====================================================
+-- FIX RLS POLICIES - Run this in Supabase SQL Editor
+-- =====================================================
+
+-- 1. Ensure RLS is enabled on profiles
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- 2. Drop existing policies to avoid conflicts
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can view own profile v2" ON public.profiles;
+DROP POLICY IF EXISTS "Allow profile select" ON public.profiles;
+
+-- 3. Create working policies
+CREATE POLICY "Users can view own profile" 
+    ON public.profiles FOR SELECT 
+    TO authenticated
+    USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile" 
+    ON public.profiles FOR UPDATE 
+    TO authenticated
+    USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile" 
+    ON public.profiles FOR INSERT 
+    TO authenticated
+    WITH CHECK (auth.uid() = id);
+
+-- 4. Fix the trigger function for new signups
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.profiles (id, full_name, email, avatar_url)
+    VALUES (
+        NEW.id,
+        COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', ''),
+        NEW.email,
+        COALESCE(NEW.raw_user_meta_data->>'avatar_url', NEW.raw_user_meta_data->>'picture', '')
+    )
+    ON CONFLICT (id) DO NOTHING;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 5. Ensure trigger exists
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_new_user();
+
+-- 6. Create missing profiles for existing users
+INSERT INTO public.profiles (id, email, full_name, avatar_url)
+SELECT 
+    au.id,
+    au.email,
+    COALESCE(au.raw_user_meta_data->>'full_name', au.raw_user_meta_data->>'name', ''),
+    COALESCE(au.raw_user_meta_data->>'avatar_url', au.raw_user_meta_data->>'picture', '')
+FROM auth.users au
+LEFT JOIN public.profiles p ON au.id = p.id
+WHERE p.id IS NULL;
+
+-- 7. Fix datasets table RLS policies too
+ALTER TABLE public.datasets ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own datasets" ON public.datasets;
+DROP POLICY IF EXISTS "Users can insert own datasets" ON public.datasets;
+DROP POLICY IF EXISTS "Users can update own datasets" ON public.datasets;
+DROP POLICY IF EXISTS "Users can delete own datasets" ON public.datasets;
+
+CREATE POLICY "Users can view own datasets" 
+    ON public.datasets FOR SELECT 
+    TO authenticated
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own datasets" 
+    ON public.datasets FOR INSERT 
+    TO authenticated
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own datasets" 
+    ON public.datasets FOR UPDATE 
+    TO authenticated
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own datasets" 
+    ON public.datasets FOR DELETE 
+    TO authenticated
+    USING (auth.uid() = user_id);
+
+SELECT 'RLS policies updated successfully!' as result;
