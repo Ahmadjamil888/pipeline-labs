@@ -1902,8 +1902,12 @@ export default function Dashboard() {
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !user) return
+    if (!file || !user) {
+      console.log('[DEBUG] No file or no user:', { file: !!file, user: !!user })
+      return
+    }
 
+    console.log('[DEBUG] Starting upload:', { fileName: file.name, fileSize: file.size, userId: user.id })
     setIsUploading(true)
     
     try {
@@ -1915,20 +1919,34 @@ export default function Dashboard() {
         throw new Error('Only CSV and JSON datasets are supported right now.')
       }
 
+      // Parse file first before upload
       const fileText = await file.text()
       const rawData = isJson ? parseJSON(fileText) : parseCSV(fileText)
+      
+      // Create new File object for upload (avoid consumed stream issues)
+      const fileBlob = new Blob([fileText], { type: file.type || (isJson ? 'application/json' : 'text/csv') })
+      const uploadFile = new File([fileBlob], file.name, { type: fileBlob.type })
+      
       const filePath = `${user.id}/${Date.now()}_${file.name}`
-      const contentType = file.type || (isJson ? 'application/json' : 'text/csv')
+      const contentType = uploadFile.type
 
-      const { error: uploadError } = await supabase.storage
+      console.log('[DEBUG] Uploading to storage:', { filePath, contentType, bucket: 'datasets', size: uploadFile.size })
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('datasets')
-        .upload(filePath, file, {
+        .upload(filePath, uploadFile, {
           contentType,
           upsert: true,
         })
 
-      if (uploadError) throw uploadError
+      if (uploadError) {
+        console.error('[DEBUG] Storage upload error:', uploadError)
+        throw new Error(`Storage upload failed: ${uploadError.message}`)
+      }
+      
+      console.log('[DEBUG] Storage upload success:', uploadData)
 
+      console.log('[DEBUG] Inserting dataset record:', { user_id: user.id, file_name: file.name, rows: rawData.length })
       const { error: insertError } = await supabase
         .from('datasets')
         .insert({
@@ -1939,18 +1957,20 @@ export default function Dashboard() {
           row_count: rawData.length,
           column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
           status: 'uploaded',
-          preview_rows: JSON.parse(JSON.stringify(rawData.slice(0, 20))),
+          preview_rows: rawData.slice(0, 20),
         })
 
       if (insertError) {
+        console.error('[DEBUG] DB insert error:', insertError)
+        // Clean up uploaded file
         await supabase.storage.from('datasets').remove([filePath])
-        throw insertError
+        throw new Error(`Database insert failed: ${insertError.message}`)
       }
 
-      toast.success('Dataset uploaded successfully')
+      toast.success(`Dataset "${file.name}" uploaded successfully (${rawData.length} rows)`)
       await loadDatasets()
     } catch (error) {
-      console.error('Upload error:', error)
+      console.error('[DEBUG] Upload error details:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to upload dataset')
     } finally {
       setIsUploading(false)
