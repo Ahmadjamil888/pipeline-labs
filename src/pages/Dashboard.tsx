@@ -1604,7 +1604,7 @@ function SettingsPage({ profile, onProfileUpdate }: { profile: Profile | null, o
       const { error } = await supabase
         .from('profiles')
         .upsert({ 
-          id: user.id, 
+          id: user.sub,
           full_name: fullName,
           email: user.email,
           updated_at: new Date().toISOString()
@@ -1628,7 +1628,7 @@ function SettingsPage({ profile, onProfileUpdate }: { profile: Profile | null, o
     try {
       // Upload to Supabase Storage
       const fileExt = file.name.split('.').pop()
-      const filePath = `${user.id}/avatar.${fileExt}`
+      const filePath = `${user.sub}/avatar.${fileExt}`
       
       const { error: uploadError } = await supabase.storage
         .from('avatars')
@@ -1645,7 +1645,7 @@ function SettingsPage({ profile, onProfileUpdate }: { profile: Profile | null, o
       const { error: updateError } = await supabase
         .from('profiles')
         .upsert({ 
-          id: user.id, 
+          id: user.sub,
           avatar_url: publicUrl,
           updated_at: new Date().toISOString()
         })
@@ -1762,7 +1762,7 @@ export default function Dashboard() {
       const { data } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
+        .eq('id', user.sub)
         .single()
       
       setProfile(data)
@@ -1779,7 +1779,7 @@ export default function Dashboard() {
       const { data: datasetsData, error } = await supabase
         .from('datasets')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', user.sub)
         .order('created_at', { ascending: false })
       
       if (error) throw error
@@ -1833,7 +1833,7 @@ export default function Dashboard() {
 
       const fileText = await file.text()
       const rawData = isJson ? parseJSON(fileText) : parseCSV(fileText)
-      const filePath = `${user.id}/${Date.now()}_${file.name}`
+      const filePath = `${user.sub}/${Date.now()}_${file.name}`
       const contentType = file.type || (isJson ? 'application/json' : 'text/csv')
 
       const { error: uploadError } = await supabase.storage
@@ -1848,7 +1848,7 @@ export default function Dashboard() {
       const { error: insertError } = await supabase
         .from('datasets')
         .insert({
-          user_id: user.id,
+          user_id: user.sub,
           file_name: file.name,
           mime_type: contentType,
           storage_path: filePath,
@@ -1965,7 +1965,7 @@ export default function Dashboard() {
             />
             <Route 
               path="/models" 
-              element={<ModelsPage datasets={datasets} userId={user.id} />} 
+              element={<ModelsPage datasets={datasets} userId={user.sub} />} 
             />
             <Route 
               path="/settings" 

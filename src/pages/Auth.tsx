@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
-import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { Loader2 } from "lucide-react";
 
 /* ─────────────────────────────────────────────
    GLOBAL STYLES
@@ -73,80 +71,20 @@ const T = {
 
 export default function Auth() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const { isAuthenticated, loading, loginWithRedirect } = useAuth();
 
-  // Redirect if already signed in
+  // Redirect if already authenticated
   useEffect(() => {
-    if (user) {
+    if (isAuthenticated && !loading) {
       navigate("/dashboard");
     }
-  }, [user, navigate]);
+  }, [isAuthenticated, loading, navigate]);
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        navigate("/dashboard");
-      } else {
-        const { error } = await supabase.auth.signUp({ 
-          email, 
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/auth`
-          }
-        });
-        if (error) throw error;
-        setMessage("Check your email for the confirmation link.");
-      }
-    } catch (err: any) {
-      setError(err.message || "An error occurred");
-    } finally {
-      setLoading(false);
-    }
+  const handleLogin = () => {
+    loginWithRedirect();
   };
 
-  const handleGoogleAuth = async () => {
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: `${window.location.origin}/auth`,
-        extraParams: {
-          prompt: "select_account",
-        },
-      });
-
-      if (result.error) {
-        setError(result.error.message);
-        setLoading(false);
-        return;
-      }
-
-      if (result.redirected) return;
-
-      navigate("/dashboard");
-    } catch (err: any) {
-      setError(err?.message || "Google sign-in failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading && !email && !password) {
+  if (loading) {
     return (
       <div data-theme="dark" style={{
         minHeight: "100vh",
@@ -173,7 +111,7 @@ export default function Auth() {
             color: "var(--text2, rgba(245,245,245,0.52))",
             fontFamily: T.font,
           }}>
-            Completing sign in...
+            Loading...
           </p>
         </div>
         <style>{`
@@ -225,7 +163,7 @@ export default function Auth() {
             fontFamily: T.font,
             textAlign: "center",
           }}>
-            {isLogin ? "Welcome back" : "Create account"}
+            Welcome back
           </h1>
           <p style={{
             fontSize: "14px",
@@ -234,223 +172,39 @@ export default function Auth() {
             fontFamily: T.font,
             textAlign: "center",
           }}>
-            {isLogin ? "Sign in to continue to Pipeline Labs" : "Get started with your free account"}
+            Sign in to continue to Pipeline Labs
           </p>
 
-          {/* Google OAuth */}
+          {/* Auth0 Login Button */}
           <button
-            onClick={handleGoogleAuth}
-            disabled={loading}
+            onClick={handleLogin}
             style={{
               width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "10px",
               padding: "12px 16px",
-              background: "transparent",
-              border: "1px solid var(--border2)",
+              background: "var(--text)",
+              color: "var(--bg)",
+              border: "none",
               borderRadius: "8px",
-              color: "var(--text)",
               fontSize: "14px",
-              fontWeight: 500,
+              fontWeight: 600,
               fontFamily: T.font,
-              cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.7 : 1,
-              transition: "all 0.15s",
-              marginBottom: "24px",
+              cursor: "pointer",
+              transition: "opacity 0.15s",
             }}
             onMouseEnter={(e) => {
-              if (!loading) e.currentTarget.style.background = "var(--bg3)";
+              e.currentTarget.style.opacity = "0.9";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.opacity = "1";
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-            </svg>
-            Continue with Google
+            Sign in with Auth0
           </button>
-
-          {/* Divider */}
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "16px",
-            marginBottom: "24px",
-          }}>
-            <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
-            <span style={{ fontSize: "12px", color: "var(--text3)", fontFamily: T.font }}>or</span>
-            <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
-          </div>
-
-          {/* Email Form */}
-          <form onSubmit={handleEmailAuth} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div>
-              <label style={{
-                display: "block",
-                fontSize: "12px",
-                fontWeight: 500,
-                color: "var(--text2)",
-                marginBottom: "6px",
-                fontFamily: T.font,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}>
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com"
-                required
-                style={{
-                  width: "100%",
-                  padding: "12px 14px",
-                  background: "var(--bg2)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "8px",
-                  color: "var(--text)",
-                  fontSize: "14px",
-                  fontFamily: T.font,
-                  outline: "none",
-                  transition: "border-color 0.15s",
-                }}
-                onFocus={(e) => e.currentTarget.style.borderColor = "var(--border2)"}
-                onBlur={(e) => e.currentTarget.style.borderColor = "var(--border)"}
-              />
-            </div>
-
-            <div>
-              <label style={{
-                display: "block",
-                fontSize: "12px",
-                fontWeight: 500,
-                color: "var(--text2)",
-                marginBottom: "6px",
-                fontFamily: T.font,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}>
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                minLength={6}
-                style={{
-                  width: "100%",
-                  padding: "12px 14px",
-                  background: "var(--bg2)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "8px",
-                  color: "var(--text)",
-                  fontSize: "14px",
-                  fontFamily: T.font,
-                  outline: "none",
-                  transition: "border-color 0.15s",
-                }}
-                onFocus={(e) => e.currentTarget.style.borderColor = "var(--border2)"}
-                onBlur={(e) => e.currentTarget.style.borderColor = "var(--border)"}
-              />
-            </div>
-
-            {error && (
-              <div style={{
-                padding: "12px 16px",
-                background: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.2)",
-                borderRadius: "8px",
-                color: "#ef4444",
-                fontSize: "13px",
-                fontFamily: T.font,
-              }}>
-                {error}
-              </div>
-            )}
-
-            {message && (
-              <div style={{
-                padding: "12px 16px",
-                background: "rgba(34, 197, 94, 0.1)",
-                border: "1px solid rgba(34, 197, 94, 0.2)",
-                borderRadius: "8px",
-                color: "#22c55e",
-                fontSize: "13px",
-                fontFamily: T.font,
-              }}>
-                {message}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: "100%",
-                padding: "12px 16px",
-                background: "var(--text)",
-                color: "var(--bg)",
-                border: "none",
-                borderRadius: "8px",
-                fontSize: "14px",
-                fontWeight: 600,
-                fontFamily: T.font,
-                cursor: loading ? "not-allowed" : "pointer",
-                opacity: loading ? 0.7 : 1,
-                transition: "opacity 0.15s",
-                marginTop: "8px",
-              }}
-            >
-              {loading ? (
-                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-                  <Loader2 style={{ width: "16px", height: "16px", animation: "spin 1s linear infinite" }} />
-                  {isLogin ? "Signing in..." : "Creating account..."}
-                </span>
-              ) : (
-                isLogin ? "Sign in" : "Create account"
-              )}
-            </button>
-          </form>
-
-          {/* Toggle */}
-          <p style={{
-            textAlign: "center",
-            marginTop: "24px",
-            fontSize: "14px",
-            color: "var(--text2)",
-            fontFamily: T.font,
-          }}>
-            {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--text)",
-                fontWeight: 600,
-                cursor: "pointer",
-                fontSize: "14px",
-                fontFamily: T.font,
-                textDecoration: "underline",
-              }}
-            >
-              {isLogin ? "Sign up" : "Sign in"}
-            </button>
-          </p>
 
           {/* Back to home */}
           <p style={{
             textAlign: "center",
-            marginTop: "16px",
+            marginTop: "24px",
             fontSize: "13px",
             color: "var(--text3)",
             fontFamily: T.font,
@@ -461,12 +215,6 @@ export default function Auth() {
           </p>
         </div>
       </div>
-
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
