@@ -2155,10 +2155,10 @@ export default function PipelineLabs() {
       <div style={{ background: "var(--bg)", minHeight: "100vh", fontFamily: T.font }}>
         <Nav theme={theme} toggleTheme={toggle} />
         <main style={{ paddingTop: 64 }}>
-          <Hero />
+          <Hero theme={theme} />
           <Marquee />
           <PainSection />
-          <DashboardSimulation />
+          <DashboardSimulation theme={theme} />
           <HowItWorks />
           <SDKSection />
           <Features />
