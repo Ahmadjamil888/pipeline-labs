@@ -1819,15 +1819,28 @@ export default function Dashboard() {
 
   // Load profile
   const loadProfile = async () => {
-    if (!user) return
+    if (!user) {
+      console.log('[DEBUG] No user, skipping profile load')
+      return
+    }
+    
+    // Check session
+    const { data: { session } } = await supabase.auth.getSession()
+    console.log('[DEBUG] Session:', session ? 'Present' : 'Missing', 'User ID:', user.id)
     
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single()
       
+      if (error) {
+        console.error('[DEBUG] Profile load error:', error)
+        throw error
+      }
+      
+      console.log('[DEBUG] Profile loaded:', data)
       setProfile(data)
     } catch (err) {
       console.error('Error loading profile:', err)
@@ -1836,7 +1849,10 @@ export default function Dashboard() {
 
   // Load datasets
   const loadDatasets = async () => {
-    if (!user) return
+    if (!user) {
+      console.log('[DEBUG] No user, skipping datasets load')
+      return
+    }
     
     try {
       const { data: datasetsData, error } = await supabase
@@ -1845,7 +1861,12 @@ export default function Dashboard() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
       
-      if (error) throw error
+      if (error) {
+        console.error('[DEBUG] Datasets load error:', error)
+        throw error
+      }
+      
+      console.log('[DEBUG] Datasets loaded:', datasetsData?.length || 0)
       
       setDatasets(datasetsData?.map((d: any) => ({
         id: d.id,
