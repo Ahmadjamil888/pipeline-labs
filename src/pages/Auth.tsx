@@ -187,16 +187,6 @@ export default function Auth() {
             alt="Pipeline Labs"
             style={{ height: 36, objectFit: "contain" }}
           />
-          <span
-            style={{
-              fontSize: "22px",
-              fontWeight: 600,
-              color: "var(--text)",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Pipeline Labs
-          </span>
         </Link>
       </div>
 
