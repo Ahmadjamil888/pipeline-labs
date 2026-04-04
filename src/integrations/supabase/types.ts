@@ -89,6 +89,69 @@ export type Database = {
         }
         Relationships: []
       }
+      dataset_chats: {
+        Row: {
+          id: string
+          dataset_id: string
+          messages: Json
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          dataset_id: string
+          messages?: Json
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          dataset_id?: string
+          messages?: Json
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      trained_models: {
+        Row: {
+          id: string
+          dataset_id: string
+          user_id: string
+          model_name: string
+          algorithm: string
+          status: string
+          accuracy: number | null
+          logs: Json
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          dataset_id: string
+          user_id: string
+          model_name: string
+          algorithm: string
+          status?: string
+          accuracy?: number | null
+          logs?: Json
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          dataset_id?: string
+          user_id?: string
+          model_name?: string
+          algorithm?: string
+          status?: string
+          accuracy?: number | null
+          logs?: Json
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
