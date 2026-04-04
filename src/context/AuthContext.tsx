@@ -1,12 +1,12 @@
-import { createContext, useContext, ReactNode } from 'react';
-import { useAuth0, User as Auth0User } from '@auth0/auth0-react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import type { User, Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
-  user: Auth0User | null;
-  isAuthenticated: boolean;
+  user: User | null;
+  session: Session | null;
   loading: boolean;
   signOut: () => Promise<void>;
-  loginWithRedirect: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -18,36 +18,36 @@ export const useAuth = () => {
 };
 
 interface AuthProviderProps {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
-  const {
-    user,
-    isAuthenticated,
-    isLoading,
-    logout,
-    loginWithRedirect,
-  } = useAuth0();
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const signOut = async () => {
-    await logout({ 
-      logoutParams: {
-        returnTo: window.location.origin 
-      }
-    });
-  };
-
-  const value: AuthContextType = {
-    user: user || null,
-    isAuthenticated,
-    loading: isLoading,
-    signOut,
-    loginWithRedirect,
+    await supabase.auth.signOut();
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, session, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );
