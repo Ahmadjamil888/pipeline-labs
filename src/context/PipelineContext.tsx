@@ -53,7 +53,6 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       
       // Upload file to Supabase Storage
       const fileExt = file.name.split('.').pop() || 'csv';
-      const filePath = `${user.id}/${Date.now()}_${file.name}`;
       
       const { error: uploadError } = await supabase.storage
         .from('datasets')
