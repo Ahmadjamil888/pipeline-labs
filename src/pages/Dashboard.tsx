@@ -5,7 +5,7 @@ import { useNavigate, useLocation, Routes, Route, Link } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/context/AuthContext'
 import { toast } from 'sonner'
-import { parseCSV, parseJSON } from '@/lib/dataProcessing'
+import { parseCSV, parseJSON, analyzeColumns, cleanData, transformData } from '@/lib/dataProcessing'
 
 const HF = "'Inter', sans-serif"
 
@@ -34,6 +34,7 @@ interface Profile {
 const navItems = [
   { id: 'overview', label: 'Overview', icon: 'dashboard', path: '/dashboard' },
   { id: 'datasets', label: 'Datasets', icon: 'database', path: '/dashboard/datasets' },
+  { id: 'clean-ai', label: 'Clean with AI', icon: 'auto_fix', path: '/dashboard/clean-ai' },
   { id: 'chat', label: 'AI Assistant', icon: 'chat_bubble', path: '/dashboard/chat' },
   { id: 'models', label: 'Model Training', icon: 'model_training', path: '/dashboard/models' },
   { id: 'settings', label: 'Settings', icon: 'settings', path: '/dashboard/settings' },
@@ -500,7 +501,7 @@ function DatasetsPage({
                 {dataset.status || 'Uploaded'}
               </span>
               <Link 
-                to={`/dashboard/chat?dataset=${dataset.id}`}
+                to={`/dashboard/clean-ai?dataset=${dataset.id}`}
                 className="text-[#d5c5a6] text-sm hover:underline flex items-center gap-1"
               >
                 Clean with AI
@@ -521,16 +522,554 @@ function DatasetsPage({
   )
 }
 
-// Chat/AI Assistant Page
+// AI Clean Page - Chat + Dataset Preview Side-by-Side
+interface CleaningAction {
+  type: 'drop_columns' | 'fill_nulls' | 'remove_duplicates' | 'scale_features' | 'encode_categorical' | 'remove_outliers'
+  columns?: string[]
+  method?: string
+  reason: string
+}
+
+interface AICleanState {
+  targetVariable?: string
+  purpose?: string
+  isAnalyzing: boolean
+  cleaningPlan?: CleaningAction[]
+  appliedChanges: CleaningAction[]
+}
+
+function AICleanPage({ datasets, onDatasetsChange }: { datasets: Dataset[], onDatasetsChange: () => void }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const datasetId = new URLSearchParams(location.search).get('dataset')
+  
+  const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null)
+  const [datasetData, setDatasetData] = useState<Record<string, unknown>[]>([])
+  const [columns, setColumns] = useState<any[]>([])
+  const [messages, setMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([])
+  const [inputMessage, setInputMessage] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [aiState, setAiState] = useState<AICleanState>({ isAnalyzing: false })
+  const [isApplyingChanges, setIsApplyingChanges] = useState(false)
+
+  // Load dataset when datasetId changes
+  useEffect(() => {
+    if (datasetId) {
+      const ds = datasets.find(d => d.id === datasetId)
+      if (ds) {
+        setSelectedDataset(ds)
+        loadDatasetData(ds)
+      }
+    }
+  }, [datasetId, datasets])
+
+  const loadDatasetData = async (dataset: Dataset) => {
+    try {
+      const { data: fullData, error } = await supabase
+        .from('datasets')
+        .select('preview_rows, column_analysis, storage_path')
+        .eq('id', dataset.id)
+        .single()
+
+      if (error) throw error
+
+      if (fullData?.preview_rows) {
+        const rows = Array.isArray(fullData.preview_rows) ? fullData.preview_rows : JSON.parse(fullData.preview_rows)
+        setDatasetData(rows)
+        
+        if (fullData.column_analysis) {
+          setColumns(Array.isArray(fullData.column_analysis) ? fullData.column_analysis : JSON.parse(fullData.column_analysis))
+        } else if (rows.length > 0) {
+          const cols = analyzeColumns(rows)
+          setColumns(cols)
+        }
+      }
+
+      // Start with initial AI message
+      setMessages([{
+        role: 'assistant',
+        content: `Hi! I'm your AI data cleaning assistant. I can see your dataset "${dataset.file_name}" with ${dataset.row_count} rows and ${dataset.column_count} columns.\n\nTo get started, please tell me:\n1. What is your target variable (the column you want to predict)?\n2. What is the purpose of your analysis (e.g., classification, regression, clustering)?`
+      }])
+    } catch (error) {
+      console.error('Error loading dataset:', error)
+      toast.error('Failed to load dataset data')
+    }
+  }
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const cleanResponse = (text: string): string => {
+    return text.replace(/\*\*/g, '').replace(/\*/g, '').trim()
+  }
+
+  const analyzeDatasetWithAI = async (targetVar: string, purpose: string) => {
+    if (!selectedDataset || datasetData.length === 0) return
+
+    setAiState(prev => ({ ...prev, isAnalyzing: true, targetVariable: targetVar, purpose }))
+    setIsLoading(true)
+
+    try {
+      const columnInfo = columns.map(c => ({
+        name: c.name,
+        type: c.type,
+        nullPercent: c.nullPercent,
+        uniqueCount: c.uniqueCount,
+        isConstant: c.isConstant,
+        isId: c.isId
+      }))
+
+      const systemPrompt = `You are an expert ML data scientist. Analyze the dataset and provide a concrete cleaning plan.
+Respond ONLY with a JSON object in this exact format:
+{
+  "analysis": "Brief assessment of data quality and ML readiness",
+  "cleaning_plan": [
+    {
+      "type": "drop_columns|fill_nulls|remove_duplicates|scale_features|encode_categorical|remove_outliers",
+      "columns": ["column_name"],
+      "method": "specific_method_name",
+      "reason": "why this action is needed"
+    }
+  ],
+  "ml_readiness": {
+    "score": 0-100,
+    "suitable_for": "classification/regression/clustering/etc",
+    "recommended_models": ["model1", "model2"]
+  }
+}
+
+Be specific and actionable. Only suggest realistic transformations based on the actual data.`
+
+      const prompt = `Dataset: ${selectedDataset.file_name}
+Target Variable: ${targetVar}
+Purpose: ${purpose}
+Rows: ${datasetData.length}
+Columns: ${JSON.stringify(columnInfo)}
+
+Sample data (first 5 rows):
+${JSON.stringify(datasetData.slice(0, 5), null, 2)}
+
+Provide a complete analysis and cleaning plan.`
+
+      const { data, error } = await supabase.functions.invoke('ai-inference', {
+        body: {
+          systemPrompt,
+          prompt,
+          model: 'google/gemini-3-flash-preview'
+        },
+      })
+
+      if (error) throw error
+      if (!data?.success) throw new Error(data?.error || 'AI request failed')
+
+      const reply = cleanResponse(data.result)
+      
+      // Try to parse JSON from the response
+      let parsedResponse: any
+      try {
+        const jsonMatch = reply.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          parsedResponse = JSON.parse(jsonMatch[0])
+        }
+      } catch (e) {
+        console.log('Could not parse JSON response, using text response')
+      }
+
+      if (parsedResponse?.cleaning_plan) {
+        setAiState(prev => ({ 
+          ...prev, 
+          isAnalyzing: false, 
+          cleaningPlan: parsedResponse.cleaning_plan 
+        }))
+        
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `${parsedResponse.analysis || 'Analysis complete'}\n\nML Readiness Score: ${parsedResponse.ml_readiness?.score || 'N/A'}/100\nSuitable for: ${parsedResponse.ml_readiness?.suitable_for || purpose}\n\nRecommended Models: ${parsedResponse.ml_readiness?.recommended_models?.join(', ') || 'Various ML models'}\n\nI've prepared a cleaning plan with ${parsedResponse.cleaning_plan.length} actions. Click "Apply Cleaning Plan" to execute these changes on your dataset.`
+        }])
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: reply }])
+      }
+    } catch (error) {
+      console.error('AI analysis error:', error)
+      toast.error('Failed to analyze dataset')
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'I encountered an error while analyzing your dataset. Please try again or ask me specific questions about cleaning.'
+      }])
+    } finally {
+      setIsLoading(false)
+      setAiState(prev => ({ ...prev, isAnalyzing: false }))
+    }
+  }
+
+  const applyCleaningPlan = async () => {
+    if (!selectedDataset || !aiState.cleaningPlan || aiState.cleaningPlan.length === 0) return
+
+    setIsApplyingChanges(true)
+    
+    try {
+      let cleanedData = [...datasetData]
+      const appliedActions: CleaningAction[] = []
+
+      for (const action of aiState.cleaningPlan) {
+        switch (action.type) {
+          case 'drop_columns':
+            if (action.columns) {
+              cleanedData = cleanedData.map(row => {
+                const newRow = { ...row }
+                action.columns!.forEach(col => delete newRow[col])
+                return newRow
+              })
+              appliedActions.push(action)
+            }
+            break
+          case 'fill_nulls':
+            cleanedData = cleanedData.map(row => {
+              const newRow = { ...row }
+              action.columns?.forEach(col => {
+                if (newRow[col] === null || newRow[col] === undefined || newRow[col] === '') {
+                  const colInfo = columns.find(c => c.name === col)
+                  if (colInfo?.type === 'numerical' && colInfo?.median !== undefined) {
+                    newRow[col] = colInfo.median
+                  } else if (colInfo?.type === 'categorical' && colInfo?.mode) {
+                    newRow[col] = colInfo.mode
+                  } else {
+                    newRow[col] = 'Unknown'
+                  }
+                }
+              })
+              return newRow
+            })
+            appliedActions.push(action)
+            break
+          case 'remove_duplicates':
+            const seen = new Set<string>()
+            cleanedData = cleanedData.filter(row => {
+              const key = JSON.stringify(row)
+              if (seen.has(key)) return false
+              seen.add(key)
+              return true
+            })
+            appliedActions.push(action)
+            break
+          case 'remove_outliers':
+            action.columns?.forEach(col => {
+              const colInfo = columns.find(c => c.name === col)
+              if (colInfo?.type === 'numerical') {
+                const vals = cleanedData.map(r => Number(r[col])).filter(n => !isNaN(n)).sort((a, b) => a - b)
+                if (vals.length >= 10) {
+                  const q1 = vals[Math.floor(vals.length * 0.25)]
+                  const q3 = vals[Math.floor(vals.length * 0.75)]
+                  const iqr = q3 - q1
+                  const lower = q1 - 1.5 * iqr
+                  const upper = q3 + 1.5 * iqr
+                  cleanedData = cleanedData.filter(r => {
+                    const v = Number(r[col])
+                    return !isNaN(v) && v >= lower && v <= upper
+                  })
+                }
+              }
+            })
+            appliedActions.push(action)
+            break
+        }
+      }
+
+      // Update dataset in Supabase
+      const { error: updateError } = await supabase
+        .from('datasets')
+        .update({
+          preview_rows: cleanedData.slice(0, 20),
+          cleaned_data_preview: cleanedData.slice(0, 100),
+          cleaning_actions: appliedActions,
+          status: 'cleaned',
+          row_count: cleanedData.length,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedDataset.id)
+
+      if (updateError) throw updateError
+
+      setDatasetData(cleanedData)
+      setAiState(prev => ({ ...prev, appliedChanges: appliedActions, cleaningPlan: undefined }))
+      
+      // Recalculate columns
+      if (cleanedData.length > 0) {
+        const newCols = analyzeColumns(cleanedData)
+        setColumns(newCols)
+      }
+
+      onDatasetsChange()
+      
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Cleaning complete! I've applied ${appliedActions.length} cleaning actions:\n${appliedActions.map(a => `- ${a.type}: ${a.columns?.join(', ') || 'all columns'} (${a.reason})`).join('\n')}\n\nYour dataset now has ${cleanedData.length} rows and is ready for machine learning! You can export it or proceed to model training.`
+      }])
+
+      toast.success('Dataset cleaned successfully!')
+    } catch (error) {
+      console.error('Error applying cleaning:', error)
+      toast.error('Failed to apply cleaning plan')
+    } finally {
+      setIsApplyingChanges(false)
+    }
+  }
+
+  const handleSend = async () => {
+    if (!inputMessage.trim() || isLoading) return
+
+    const userMsg = inputMessage.trim()
+    setInputMessage('')
+    setMessages(prev => [...prev, { role: 'user', content: userMsg }])
+    setIsLoading(true)
+
+    // Check if this is initial setup message
+    if (!aiState.targetVariable && !aiState.purpose) {
+      const lines = userMsg.split('\n')
+      let targetVar = ''
+      let purpose = ''
+      
+      for (const line of lines) {
+        const lower = line.toLowerCase()
+        if (lower.includes('target') || lower.includes('predict') || lower.includes('variable')) {
+          const parts = line.split(':')
+          if (parts.length > 1) targetVar = parts[1].trim()
+          else if (line.includes('is ')) targetVar = line.substring(line.indexOf('is ') + 3).trim()
+        }
+        if (lower.includes('purpose') || lower.includes('classification') || lower.includes('regression') || lower.includes('cluster')) {
+          const parts = line.split(':')
+          if (parts.length > 1) purpose = parts[1].trim()
+          else purpose = line.trim()
+        }
+      }
+
+      if (targetVar || purpose) {
+        const finalTarget = targetVar || 'unknown'
+        const finalPurpose = purpose || 'machine learning'
+        await analyzeDatasetWithAI(finalTarget, finalPurpose)
+        return
+      }
+    }
+
+    // Regular chat handling
+    try {
+      const datasetContext = selectedDataset ? [
+        `Dataset: ${selectedDataset.file_name}`,
+        `Rows: ${datasetData.length}`,
+        `Columns: ${columns.map(c => c.name).join(', ')}`,
+        `Target: ${aiState.targetVariable || 'Not specified'}`,
+        `Purpose: ${aiState.purpose || 'Not specified'}`,
+        `Sample: ${JSON.stringify(datasetData.slice(0, 3))}`
+      ].join('\n') : ''
+
+      const { data, error } = await supabase.functions.invoke('ai-inference', {
+        body: {
+          systemPrompt: 'You are Pipeline Labs AI. Provide concise, practical guidance for dataset cleaning and ML preparation. Never use ** or * formatting in responses.',
+          prompt: `${datasetContext}\n\nUser: ${userMsg}\n\nRespond without using any markdown formatting like ** or *.`,
+        },
+      })
+
+      if (error) throw error
+      if (!data?.success) throw new Error(data?.error || 'AI request failed')
+
+      const reply = cleanResponse(data.result)
+      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
+    } catch (error) {
+      console.error('Chat error:', error)
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  if (!selectedDataset) {
+    return (
+      <div className="flex flex-col h-[calc(100vh-64px)] lg:h-screen bg-[#131313]">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center p-8">
+            <span className="material-symbols-outlined text-6xl text-neutral-600 mb-4">auto_fix</span>
+            <h3 className="text-xl font-medium text-white mb-2">Select a Dataset to Clean</h3>
+            <p className="text-neutral-400 mb-6">Choose a dataset from your library to start AI-powered cleaning</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+              {datasets.map(ds => (
+                <button
+                  key={ds.id}
+                  onClick={() => navigate(`/dashboard/clean-ai?dataset=${ds.id}`)}
+                  className="bg-[#1c1b1b] border border-white/10 rounded-xl p-4 text-left hover:border-[#d5c5a6] transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-[#d5c5a6]">table_chart</span>
+                    <div>
+                      <p className="text-white font-medium truncate">{ds.file_name}</p>
+                      <p className="text-xs text-neutral-500">{ds.row_count} rows · {ds.column_count} columns</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            {datasets.length === 0 && (
+              <Link to="/dashboard/datasets" className="inline-block bg-white text-neutral-900 px-6 py-3 rounded-full font-medium hover:opacity-90">
+                Upload Your First Dataset
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-64px)] lg:h-screen bg-[#131313]">
+      {/* Header */}
+      <div className="px-6 py-3 border-b border-neutral-800 bg-neutral-950/50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#d5c5a6] to-neutral-600 flex items-center justify-center">
+            <span className="material-symbols-outlined text-neutral-900 text-sm">auto_fix</span>
+          </div>
+          <div>
+            <h3 className="font-medium text-white text-sm">AI Data Cleaning</h3>
+            <p className="text-xs text-neutral-500">{selectedDataset.file_name}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {aiState.cleaningPlan && aiState.cleaningPlan.length > 0 && (
+            <button
+              onClick={applyCleaningPlan}
+              disabled={isApplyingChanges}
+              className="bg-[#d5c5a6] text-neutral-900 px-4 py-2 rounded-full text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-sm">play_arrow</span>
+              {isApplyingChanges ? 'Applying...' : `Apply Plan (${aiState.cleaningPlan.length} actions)`}
+            </button>
+          )}
+          <select
+            value={selectedDataset.id}
+            onChange={(e) => navigate(`/dashboard/clean-ai?dataset=${e.target.value}`)}
+            className="bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white"
+          >
+            {datasets.map(ds => (
+              <option key={ds.id} value={ds.id}>{ds.file_name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Main Content - Side by Side */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Chat Panel */}
+        <div className="flex-1 flex flex-col min-w-0 border-r border-neutral-800">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[90%] rounded-2xl px-4 py-3 ${
+                  msg.role === 'user' 
+                    ? 'bg-white text-neutral-900' 
+                    : 'bg-neutral-800 text-white'
+                }`}>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                </div>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-neutral-800 rounded-2xl px-4 py-3">
+                  <div className="flex gap-1">
+                    <span className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce" />
+                    <span className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce delay-100" />
+                    <span className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce delay-200" />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className="p-4 border-t border-neutral-800 bg-neutral-950/50">
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder="Tell me your target variable and purpose..."
+                className="flex-1 bg-neutral-900 border border-neutral-800 rounded-full px-5 py-3 text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-700 text-sm"
+              />
+              <button
+                onClick={handleSend}
+                disabled={!inputMessage.trim() || isLoading}
+                className="bg-white text-neutral-900 px-5 py-3 rounded-full font-medium hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="material-symbols-outlined">send</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Dataset Preview Panel */}
+        <div className="w-[50%] lg:w-[45%] bg-[#0e0e0e] flex flex-col">
+          <div className="px-4 py-3 border-b border-neutral-800 bg-neutral-950/50">
+            <h4 className="text-sm font-medium text-white">Dataset Preview</h4>
+            <p className="text-xs text-neutral-500">{datasetData.length} rows shown</p>
+          </div>
+          <div className="flex-1 overflow-auto">
+            {datasetData.length > 0 ? (
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 bg-[#1c1b1b]">
+                  <tr>
+                    {Object.keys(datasetData[0]).map(col => (
+                      <th key={col} className="px-3 py-2 text-xs text-neutral-400 border-b border-neutral-800 whitespace-nowrap">
+                        {col}
+                        {aiState.targetVariable === col && (
+                          <span className="ml-1 text-[#d5c5a6]">(target)</span>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800">
+                  {datasetData.slice(0, 50).map((row, i) => (
+                    <tr key={i} className="hover:bg-white/5">
+                      {Object.values(row).map((val, j) => (
+                        <td key={j} className="px-3 py-2 text-xs text-neutral-300 whitespace-nowrap max-w-[150px] truncate">
+                          {String(val ?? '')}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-neutral-500 text-sm">Loading data...</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Chat Page - General AI Assistant
 function ChatPage() {
   const location = useLocation()
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Hi! I\'m your AI data assistant. Upload a dataset or ask me to help clean and prepare your data for machine learning training.' }
+    { role: 'assistant', content: 'Hi! I am your AI data assistant. Upload a dataset or ask me to help clean and prepare your data for machine learning training.' }
   ])
   const datasetId = new URLSearchParams(location.search).get('dataset')
+
+  const cleanResponse = (text: string): string => {
+    return text.replace(/\*\*/g, '').replace(/\*/g, '').trim()
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -576,15 +1115,15 @@ function ChatPage() {
 
       const { data, error } = await supabase.functions.invoke('ai-inference', {
         body: {
-          systemPrompt: 'You are Pipeline Labs AI. Give concise, practical guidance for dataset cleaning, feature engineering, model training preparation, and validation. If dataset context is present, ground your answer in it. Never pretend a transformation has already run unless the user explicitly asked for it and you state it as a recommendation.',
-          prompt: `${datasetContext ? `${datasetContext}\n\n` : ''}Conversation:\n${conversationContext}\n\nAnswer the latest user request clearly and specifically.`,
+          systemPrompt: 'You are Pipeline Labs AI. Give concise, practical guidance for dataset cleaning, feature engineering, model training preparation, and validation. Never use ** or * formatting in responses.',
+          prompt: `${datasetContext ? `${datasetContext}\n\n` : ''}Conversation:\n${conversationContext}\n\nAnswer clearly without markdown formatting like ** or *.`,
         },
       })
 
       if (error) throw error
       if (!data?.success) throw new Error(data?.error || 'AI request failed')
 
-      const reply = typeof data.result === 'string' ? data.result.trim() : ''
+      const reply = cleanResponse(data.result)
       if (!reply) throw new Error('AI returned an empty response')
 
       setMessages(prev => [...prev, {
@@ -604,7 +1143,7 @@ function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] lg:h-screen">
+    <div className="flex flex-col h-[calc(100vh-64px)] lg:h-screen bg-[#131313]">
       {/* Chat Header */}
       <div className="px-6 py-4 border-b border-neutral-800 bg-neutral-950/50">
         <div className="flex items-center gap-3">
@@ -613,7 +1152,7 @@ function ChatPage() {
           </div>
           <div>
             <h3 className="font-medium text-white">AI Data Assistant</h3>
-            <p className="text-xs text-neutral-500">Powered by Lovable AI</p>
+            <p className="text-xs text-neutral-500">General chat for data questions</p>
           </div>
         </div>
       </div>
@@ -627,7 +1166,7 @@ function ChatPage() {
                 ? 'bg-white text-neutral-900' 
                 : 'bg-neutral-800 text-white'
             }`}>
-              <p className="text-sm leading-relaxed">{msg.content}</p>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
             </div>
           </div>
         ))}
@@ -653,7 +1192,7 @@ function ChatPage() {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask me to clean your data, remove duplicates, or prepare for training..."
+            placeholder="Ask about data cleaning, ML, or dataset preparation..."
             className="flex-1 bg-neutral-900 border border-neutral-800 rounded-full px-5 py-3 text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-700"
           />
           <button
@@ -664,9 +1203,6 @@ function ChatPage() {
             <span className="material-symbols-outlined">send</span>
           </button>
         </div>
-        <p className="text-xs text-neutral-600 mt-2 text-center">
-          AI can make mistakes. Please verify important information.
-        </p>
       </div>
     </div>
   )
@@ -1096,6 +1632,15 @@ export default function Dashboard() {
                   isUploading={isUploading}
                   onUploadClick={() => fileInputRef.current?.click()}
                   onDeleteDataset={handleDeleteDataset}
+                />
+              } 
+            />
+            <Route 
+              path="/clean-ai" 
+              element={
+                <AICleanPage 
+                  datasets={datasets}
+                  onDatasetsChange={loadDatasets}
                 />
               } 
             />
