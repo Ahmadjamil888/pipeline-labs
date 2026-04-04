@@ -482,7 +482,6 @@ function Hero({ theme }: { theme: Theme }) {
         >
           <ShaderGradient
             animate="on"
-            axesHelper="off"
             brightness={shaderProps.brightness}
             cAzimuthAngle={180}
             cDistance={shaderProps.cDistance}
@@ -491,12 +490,7 @@ function Hero({ theme }: { theme: Theme }) {
             color1={shaderProps.color1}
             color2={shaderProps.color2}
             color3={shaderProps.color3}
-            destination="onCanvas"
-            embedMode="off"
             envPreset="city"
-            format="gif"
-            frameRate={10}
-            gizmoHelper="hide"
             grain={isLight ? "on" : "off"}
             lightType="3d"
             positionX={-1.4}
@@ -2155,10 +2149,10 @@ export default function PipelineLabs() {
       <div style={{ background: "var(--bg)", minHeight: "100vh", fontFamily: T.font }}>
         <Nav theme={theme} toggleTheme={toggle} />
         <main style={{ paddingTop: 64 }}>
-          <Hero />
+          <Hero theme={theme} />
           <Marquee />
           <PainSection />
-          <DashboardSimulation />
+          <DashboardSimulation theme={theme} />
           <HowItWorks />
           <SDKSection />
           <Features />

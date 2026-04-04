@@ -1,17 +1,5 @@
+import { supabase } from '@/integrations/supabase/client';
 import type { ColumnAnalysis, AIReasoning } from '@/types/dataset';
-
-const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-
-// Free models available on OpenRouter
-const FREE_MODELS = [
-  'google/gemma-3-4b-it:free',
-  'google/gemma-3-1b-it:free', 
-  'huggingfaceh4/zephyr-7b-beta:free',
-  'nvidia/llama-3.2-nemotron-10b-instruct:free',
-];
-
-// Default free model for data analysis
-const DEFAULT_FREE_MODEL = 'google/gemma-3-4b-it:free';
 
 export async function getAIReasonings(columns: ColumnAnalysis[]): Promise<AIReasoning[]> {
   const prompt = `Analyze these dataset columns and provide reasoning for each. Return a JSON array.
@@ -24,36 +12,22 @@ For each column return:
 
 Return ONLY a JSON array, no markdown.`;
 
-  if (!OPENROUTER_API_KEY) {
-    return generateFallbackReasonings(columns);
-  }
-
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': window.location.origin,
-        'X-OpenRouter-Title': 'Pipeline Labs',
+    const { data, error } = await supabase.functions.invoke('ai-inference', {
+      body: {
+        prompt,
+        systemPrompt: 'You are a data science expert. Respond with valid JSON only.',
       },
-      body: JSON.stringify({
-        model: DEFAULT_FREE_MODEL,
-        messages: [
-          { role: 'system', content: 'You are a data science expert. Respond with valid JSON only.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 2000,
-      }),
     });
 
-    if (!res.ok) throw new Error('API error');
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content || '';
+    if (error) throw error;
+    if (!data?.success) throw new Error(data?.error || 'AI failed');
+
+    const content = data.result || '';
     const cleaned = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned) as AIReasoning[];
-  } catch {
+  } catch (err) {
+    console.warn('AI reasoning fallback:', err);
     return generateFallbackReasonings(columns);
   }
 }
@@ -95,7 +69,7 @@ function generateFallbackReasonings(columns: ColumnAnalysis[]): AIReasoning[] {
     };
     return {
       column: col.name, action: 'Kept', type: 'keep' as const,
-      reason: `Text column retained. May be useful for NLP features or as metadata.`,
+      reason: 'Text column retained. May be useful for NLP features or as metadata.',
       suggestion: 'Consider TF-IDF or embedding extraction for ML models.',
     };
   });
