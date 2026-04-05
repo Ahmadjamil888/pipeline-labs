@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -97,6 +97,7 @@ export default function Auth() {
         toast.success("Account created! Check your email to confirm.");
       }
     } catch (err: any) {
+      console.error("Authentication error:", err);
       setError(err.message || "An error occurred");
       toast.error(err.message || "Authentication failed");
     } finally {
@@ -120,6 +121,7 @@ export default function Auth() {
       });
       if (error) throw error;
     } catch (err: any) {
+      console.error("Google auth error:", err);
       setError(err.message || "Google sign-in failed");
       toast.error(err.message || "Google sign-in failed");
       setIsLoading(false);

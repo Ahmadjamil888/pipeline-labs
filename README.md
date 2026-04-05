@@ -1,3 +1,3 @@
-# Welcome to your Lovable project
+# Pipeline Labs
 
-TODO: Document your project here
+Pipeline Labs Dataset and Dashboard platform.

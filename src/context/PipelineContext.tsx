@@ -1,10 +1,15 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
-import type { ColumnAnalysis, DatasetState, PipelineStep, AIReasoning } from '@/types/dataset';
-import { parseCSV, parseJSON, analyzeColumns, cleanData, transformData, toLLMReady } from '@/lib/dataProcessing';
-import { getAIReasonings } from '@/lib/aiReasoning';
+import type { ColumnAnalysis, DatasetState, PipelineStep, ChartConfig, DatasetVersion } from '@/types/dataset';
+import { parseCSV, parseJSON, analyzeColumns } from '@/lib/dataProcessing';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  isThinking?: boolean;
+}
 
 interface PipelineContextType {
   step: PipelineStep;
@@ -12,11 +17,15 @@ interface PipelineContextType {
   dataset: DatasetState;
   fileName: string;
   isProcessing: boolean;
+  messages: Message[];
   handleUpload: (file: File) => Promise<void>;
   runAnalysis: () => Promise<void>;
-  runCleaning: () => void;
-  runTransform: () => void;
   updateColumn: (name: string, updates: Partial<ColumnAnalysis>) => void;
+  sendMessage: (content: string) => Promise<void>;
+  saveVersion: (summary: string) => Promise<void>;
+  undoChange: () => Promise<void>;
+  applyTransform: (transformedData: Record<string, unknown>[], summary: string) => Promise<void>;
+  loadDatasetRecord: (datasetId: string) => Promise<void>;
 }
 
 const PipelineContext = createContext<PipelineContextType | null>(null);
@@ -28,7 +37,12 @@ export const usePipeline = () => {
 };
 
 const emptyState: DatasetState = {
-  rawData: [], columns: [], cleanedData: [], transformedData: [], llmReadyData: [], aiReasonings: [],
+  rawData: [],
+  columns: [],
+  currentData: [],
+  versions: [],
+  charts: [],
+  aiReasonings: [],
 };
 
 export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -37,6 +51,7 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [dataset, setDataset] = useState<DatasetState>(emptyState);
   const [fileName, setFileName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
 
   const handleUpload = useCallback(async (file: File) => {
     if (!user) {
@@ -46,12 +61,10 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setIsProcessing(true);
     try {
-      // Parse file locally first
       const text = await file.text();
       const isJSON = file.name.endsWith('.json');
       const rawData = isJSON ? parseJSON(text) : parseCSV(text);
       
-      // Upload file to Supabase Storage
       const filePath = `${user.id}/${Date.now()}_${file.name}`;
       
       const { error: uploadError } = await supabase.storage
@@ -63,7 +76,6 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       if (uploadError) throw uploadError;
 
-      // Create dataset record in database
       const { data: datasetRecord, error: dbError } = await supabase
         .from('datasets')
         .insert({
@@ -82,8 +94,12 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (dbError) throw dbError;
 
       setFileName(file.name);
-      setDataset({ ...emptyState, rawData });
+      setDataset({ ...emptyState, rawData, currentData: rawData });
       setStep('analyze');
+      setMessages([{
+        role: 'assistant',
+        content: `I've received your dataset "${file.name}". Let me analyze the structure and start our exploration!`
+      }]);
       toast.success('Dataset uploaded successfully!');
     } catch (error: any) {
       console.error('Upload error:', error);
@@ -96,27 +112,104 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const runAnalysis = useCallback(async () => {
     setIsProcessing(true);
     try {
-      const columns = analyzeColumns(dataset.rawData);
-      const aiReasonings = await getAIReasonings(columns);
-      setDataset(prev => ({ ...prev, columns, aiReasonings }));
-      setStep('clean');
+      const columns = analyzeColumns(dataset.currentData);
+      setDataset(prev => ({ ...prev, columns }));
+      setStep('explore');
+      
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Analysis complete. I see ${columns.length} columns. What shall we explore first? I can generate stats, or we can try some "what if" scenarios.`
+      }]);
     } finally {
       setIsProcessing(false);
     }
-  }, [dataset.rawData]);
+  }, [dataset.currentData]);
 
-  const runCleaning = useCallback(() => {
-    const cleanedData = cleanData(dataset.rawData, dataset.columns);
-    setDataset(prev => ({ ...prev, cleanedData }));
-    setStep('transform');
-  }, [dataset.rawData, dataset.columns]);
+  const saveVersion = useCallback(async (summary: string) => {
+    // Note: In a real app, we'd save this to the DB. For MVP, we use local state + DB entry
+    const newVersion: DatasetVersion = {
+      id: Math.random().toString(36).substr(2, 9),
+      dataset_id: 'local', // Placeholder
+      version_data: JSON.parse(JSON.stringify(dataset.currentData)),
+      change_summary: summary,
+      created_at: new Date().toISOString()
+    };
+    
+    setDataset(prev => ({
+      ...prev,
+      versions: [...prev.versions, newVersion]
+    }));
+  }, [dataset.currentData]);
 
-  const runTransform = useCallback(() => {
-    const transformedData = transformData(dataset.cleanedData, dataset.columns);
-    const llmReadyData = toLLMReady(transformedData);
-    setDataset(prev => ({ ...prev, transformedData, llmReadyData }));
-    setStep('export');
-  }, [dataset.cleanedData, dataset.columns]);
+  const undoChange = useCallback(async () => {
+    if (dataset.versions.length === 0) {
+      toast.error('No versions to undo');
+      return;
+    }
+    
+    const lastVersion = dataset.versions[dataset.versions.length - 1];
+    setDataset(prev => ({
+      ...prev,
+      currentData: lastVersion.version_data,
+      versions: prev.versions.slice(0, -1)
+    }));
+    
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `Reverted changes: ${lastVersion.change_summary}`
+    }]);
+    toast.success('Undo successful');
+  }, [dataset.versions]);
+
+  const applyTransform = useCallback(async (transformedData: Record<string, unknown>[], summary: string) => {
+    await saveVersion(summary);
+    setDataset(prev => ({
+      ...prev,
+      currentData: transformedData
+    }));
+    toast.success(`Applied: ${summary}`);
+  }, [saveVersion]);
+
+  const loadDatasetRecord = useCallback(async (id: string) => {
+    setIsProcessing(true);
+    try {
+      const { data: ds, error } = await supabase
+        .from('datasets')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (error) throw error;
+      
+      // Fetch full data from storage
+      const { data: storageData, error: storageError } = await supabase.storage
+        .from('datasets')
+        .download(ds.storage_path);
+        
+      if (storageError) throw storageError;
+      
+      const text = await storageData.text();
+      const isJSON = ds.storage_path.endsWith('.json');
+      const rawData = isJSON ? parseJSON(text) : parseCSV(text);
+      
+      setFileName(ds.file_name);
+      setDataset({
+        ...emptyState,
+        rawData,
+        currentData: rawData,
+        columns: analyzeColumns(rawData)
+      });
+      setStep('explore');
+      setMessages([{
+        role: 'assistant',
+        content: `I've loaded your dataset "${ds.file_name}". What would you like to explore?`
+      }]);
+    } catch (err: any) {
+      toast.error('Failed to load dataset: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, []);
 
   const updateColumn = useCallback((name: string, updates: Partial<ColumnAnalysis>) => {
     setDataset(prev => ({
@@ -125,10 +218,86 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }));
   }, []);
 
+  const sendMessage = useCallback(async (content: string) => {
+    setMessages(prev => [...prev, { role: 'user', content }]);
+    setIsProcessing(true);
+    
+    try {
+      const context = `
+Dataset Preview: ${JSON.stringify(dataset.currentData.slice(0, 5))}
+Columns: ${JSON.stringify(dataset.columns.map(c => ({ name: c.name, type: c.type, nullCount: c.nullCount })))}
+Current Step: ${step}
+      `;
+
+      const response = await supabase.functions.invoke('ai-inference', {
+        body: {
+          prompt: `${context}\n\nUser Question: ${content}`,
+          stream: true
+        }
+      });
+
+      if (!response.data) throw new Error('No data from AI');
+
+      // Helper for streaming
+      const reader = response.data.getReader();
+      const decoder = new TextDecoder();
+      let assistantMsg = '';
+      
+      setMessages(prev => [...prev, { role: 'assistant', content: '', isThinking: true }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.substring(6));
+              const text = data.choices[0]?.delta?.content || '';
+              assistantMsg += text;
+              
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                return [...prev.slice(0, -1), { 
+                  ...last, 
+                  content: assistantMsg,
+                  isThinking: !done 
+                }];
+              });
+            } catch (e) { /* partial json */ }
+          }
+        }
+      }
+
+      // Check for chart blocks in the final message
+      const chartMatch = assistantMsg.match(/<chart>([\s\S]*?)<\/chart>/);
+      if (chartMatch) {
+        try {
+          const chartConfig: ChartConfig = JSON.parse(chartMatch[1]);
+          setDataset(prev => ({
+            ...prev,
+            charts: [...prev.charts, chartConfig]
+          }));
+        } catch (e) {
+          console.error('Failed to parse chart JSON', e);
+        }
+      }
+
+    } catch (error: any) {
+      console.error('Chat error:', error);
+      toast.error('AI failed to respond');
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [dataset.currentData, dataset.columns, step]);
+
   return (
     <PipelineContext.Provider value={{
-      step, setStep, dataset, fileName, isProcessing,
-      handleUpload, runAnalysis, runCleaning, runTransform, updateColumn,
+      step, setStep, dataset, fileName, isProcessing, messages,
+      handleUpload, runAnalysis, updateColumn, sendMessage, saveVersion, undoChange, applyTransform, loadDatasetRecord
     }}>
       {children}
     </PipelineContext.Provider>

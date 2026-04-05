@@ -12,6 +12,7 @@ import NotFound from "./pages/NotFound";
 import ApiDocs from "./pages/ApiDocs";
 import ApiStatus from "./pages/ApiStatus";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { PipelineProvider } from "@/context/PipelineContext";
 
 const queryClient = new QueryClient();
 
@@ -31,7 +32,9 @@ const App = () => (
             <Route path="/api/status" element={<ApiStatus />} />
             <Route path="/dashboard/*" element={
               <ProtectedRoute>
-                <Dashboard />
+                <PipelineProvider>
+                  <Dashboard />
+                </PipelineProvider>
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />

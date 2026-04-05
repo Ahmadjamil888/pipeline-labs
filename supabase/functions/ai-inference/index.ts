@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { prompt, model, systemPrompt } = await req.json();
+    const { prompt, model, systemPrompt, stream = false } = await req.json();
 
     if (!prompt) {
       return new Response(
@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const apiKey = Deno.env.get('LOVABLE_API_KEY');
+    const apiKey = Deno.env.get('OPENROUTER_API_KEY');
     if (!apiKey) {
       return new Response(
         JSON.stringify({ success: false, error: 'AI not configured' }),
@@ -26,47 +26,55 @@ Deno.serve(async (req) => {
       );
     }
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    console.log(`[AI] Processing prompt with model: ${model || 'gemini-2.0-flash'} (stream=${stream})`);
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://pipelinelabs.ai',
+        'X-Title': 'Pipeline Labs',
       },
       body: JSON.stringify({
-        model: model || 'google/gemini-3-flash-preview',
+        model: model || 'google/gemini-2.0-flash-001',
+        stream,
         messages: [
-          { role: 'system', content: systemPrompt || 'You are an ML expert. Provide concise, actionable predictions and analysis.' },
+          { 
+            role: 'system', 
+            content: systemPrompt || `You are an expert AI Data Scientist at Pipeline Labs. 
+Your goal is to help users explore, clean, and experiment with their datasets.
+Always act professionally yet experimentally. "Think out loud" by providing multiple message blocks.
+When suggesting changes, explain the 'why' and show evidence (stats/plots).
+If providing JSON for visualizations, return it in a <chart> [JSON] </chart> block using recharts-compatible format.
+If you are thinking out loud, prefix those parts with "THOUGHTS: ".`
+          },
           { role: 'user', content: prompt },
         ],
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Rate limited. Please try again later.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'AI credits exhausted. Please add funds.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
       const errText = await response.text();
-      console.error('AI gateway error:', response.status, errText);
+      console.error('OpenRouter error:', response.status, errText);
       return new Response(
-        JSON.stringify({ success: false, error: `AI error: ${response.status}` }),
+        JSON.stringify({ success: false, error: `AI error: ${response.status}`, details: errText }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    return new Response(JSON.stringify({ success: true, result: content }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    if (stream) {
+      console.log('[AI] Starting stream response');
+      return new Response(response.body, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+      });
+    } else {
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      return new Response(JSON.stringify({ success: true, result: content }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Failed';
     console.error('ai-inference error:', msg);
