@@ -894,7 +894,7 @@ Provide a complete analysis and cleaning plan.`
       const { error: updateError } = await supabase
         .from('datasets')
         .update({
-          preview_rows: cleanedData.slice(0, 20),
+          preview_rows: JSON.parse(JSON.stringify(cleanedData.slice(0, 20))),
           status: 'cleaned',
           row_count: cleanedData.length,
           updated_at: new Date().toISOString()
