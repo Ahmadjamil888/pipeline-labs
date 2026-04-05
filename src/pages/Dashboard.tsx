@@ -608,6 +608,7 @@ interface AICleanState {
 function AICleanPage({ datasets, onDatasetsChange }: { datasets: Dataset[], onDatasetsChange: () => void }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const datasetId = new URLSearchParams(location.search).get('dataset')
   
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null)
