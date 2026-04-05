@@ -1492,7 +1492,7 @@ Recommend the best ML algorithm.`
       addLog(`Training complete! Final accuracy: ${finalAccuracy.toFixed(2)}%`)
 
       // Save model to database
-      const { error: saveError } = await supabase
+      const { error: saveError } = await (supabase as any)
         .from('trained_models')
         .insert({
           dataset_id: dataset.id,
