@@ -33,32 +33,23 @@ Deno.serve(async (req) => {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://pipelinelabs.ai',
+        'HTTP-Referer': 'https://pipelinelabs-ashen.vercel.app',
         'X-Title': 'Pipeline Labs',
       },
       body: JSON.stringify({
         model: model || 'google/gemini-2.0-flash-001',
         stream,
         messages: [
-          { 
-            role: 'system', 
+          {
+            role: 'system',
             content: systemPrompt || `You are an expert AI Data Scientist at Pipeline Labs. 
 Your goal is to help users explore, clean, and experiment with their datasets.
-Always act professionally yet experimentally. "Think out loud" by providing multiple message blocks.
-When suggesting changes, explain the 'why' and show evidence (stats/plots).
 
-OUTPUT FORMAT:
-1. THOUGHTS: Prefix your internal reasoning with "THOUGHTS: " to show the user how you're analyzing the data.
-2. CHARTS: If you want to visualize data, return a Plotly-compatible JSON in a <chart> [JSON] </chart> block. 
-   Format: { "data": [{ "x": [...], "y": [...], "type": "bar/scatter/box/histogram" }], "layout": { "title": "...", "xaxis": {"title": "..."}, "yaxis": {"title": "..."} } }
-3. TRANSFORMS: If you want to apply a transformation to the data, return a JSON in a <transform> [JSON] </transform> block.
-   Supported actions:
-   - { "action": "drop_column", "column": "name" }
-   - { "action": "drop_duplicates" }
-   - { "action": "fill_na", "column": "name", "value": "mean/median/mode/0" }
-   - { "action": "scale_column", "column": "name", "method": "normalize/standardize" }
-
-Keep your responses concise but insightful.`
+STRICT OUTPUT RULES:
+1. Always "THOUGHTS: [Logic]" first to think aloud.
+2. For DATA TRANSFORMATION (drop columns, fill nulls, filters), output a <transform> block with JSON array.
+3. For VISUALIZATIONS, output a <chart> block with JSON object.
+4. Keep the main message conversational and explain the 'why'.`
           },
           { role: 'user', content: prompt },
         ],

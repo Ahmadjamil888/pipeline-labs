@@ -213,3 +213,33 @@ export function exportCSV(data: Record<string, unknown>[]): string {
 export function exportJSON(data: Record<string, unknown>[]): string {
   return JSON.stringify(data, null, 2);
 }
+export function executeTransform(data: Record<string, unknown>[], transform: { action: string, columns: string[], type: string, value?: any }): Record<string, unknown>[] {
+  const { action, columns, type, value } = transform;
+  
+  switch (type) {
+    case 'drop':
+      return data.map(row => {
+        const newRow = { ...row };
+        columns.forEach(col => delete newRow[col]);
+        return newRow;
+      });
+    case 'impute':
+      return data.map(row => {
+        const newRow = { ...row };
+        columns.forEach(col => {
+          if (newRow[col] === null || newRow[col] === undefined || newRow[col] === '') {
+            newRow[col] = value || 'Unknown';
+          }
+        });
+        return newRow;
+      });
+    case 'filter':
+      // Basic filter: keep rows where column != value if value is provided as { not: 'x' }
+      // Or just a simple 'is not null'
+      return data.filter(row => {
+        return columns.every(col => row[col] !== null && row[col] !== undefined && row[col] !== '');
+      });
+    default:
+      return data;
+  }
+}

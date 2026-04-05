@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import type { ColumnAnalysis, DatasetState, PipelineStep, ChartConfig, DatasetVersion } from '@/types/dataset';
-import { parseCSV, parseJSON, analyzeColumns } from '@/lib/dataProcessing';
+import { parseCSV, parseJSON, analyzeColumns, executeTransform } from '@/lib/dataProcessing';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -264,7 +264,7 @@ Current Step: ${step}
                 return [...prev.slice(0, -1), { 
                   ...last, 
                   content: assistantMsg,
-                  isThinking: !done 
+                  isThinking: true 
                 }];
               });
             } catch (e) { /* partial json */ }
@@ -272,58 +272,29 @@ Current Step: ${step}
         }
       }
 
-      const endMsg = assistantMsg;
-      
-      // 1. Process Transforms
-      const transformMatch = endMsg.match(/<transform>([\s\S]*?)<\/transform>/);
+      // Stream complete — stop thinking indicator
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        return [...prev.slice(0, -1), { ...last, isThinking: false }];
+      });
+
+      // Check for transform blocks
+      const transformMatch = assistantMsg.match(/<transform>([\s\S]*?)<\/transform>/);
       if (transformMatch) {
-        try {
-          const transform = JSON.parse(transformMatch[1]);
-          const transforms = Array.isArray(transform) ? transform : [transform];
-          
-          let newData = [...dataset.currentData];
-          let summary = "AI Transformation: ";
-          
-          for (const t of transforms) {
-            if (t.action === 'drop_column') {
-              newData = newData.map(row => {
-                const { [t.column]: _, ...rest } = row;
-                return rest;
-              });
-              summary += `Dropped ${t.column}. `;
-            } else if (t.action === 'drop_duplicates') {
-              const seen = new Set();
-              newData = newData.filter(row => {
-                const str = JSON.stringify(row);
-                if (seen.has(str)) return false;
-                seen.add(str);
-                return true;
-              });
-              summary += `Dropped duplicates. `;
-            } else if (t.action === 'fill_na') {
-              const col = dataset.columns.find(c => c.name === t.column);
-              const fillVal = t.value === 'mean' ? col?.mean : t.value === 'median' ? col?.median : t.value === 'mode' ? col?.mode : t.value;
-              newData = newData.map(row => ({
-                ...row,
-                [t.column]: (row[t.column] === null || row[t.column] === undefined || row[t.column] === '') ? fillVal : row[t.column]
-              }));
-              summary += `Filled NA in ${t.column} with ${fillVal}. `;
-            }
-          }
-          
-          if (summary !== "AI Transformation: ") {
-            await applyTransform(newData, summary);
-          }
-        } catch (e) {
-          console.error('Failed to parse transform JSON', e);
-        }
+         try {
+           const transformConfig = JSON.parse(transformMatch[1]);
+           const transformed = executeTransform(dataset.currentData, transformConfig);
+           await applyTransform(transformed, transformConfig.description || `AI: ${transformConfig.action}`);
+         } catch (e) {
+           console.error('Failed to apply transform', e);
+         }
       }
 
-      // 2. Process Charts
-      const chartMatch = endMsg.match(/<chart>([\s\S]*?)<\/chart>/);
+      // Check for chart blocks in the final message
+      const chartMatch = assistantMsg.match(/<chart>([\s\S]*?)<\/chart>/);
       if (chartMatch) {
         try {
-          const chartConfig: any = JSON.parse(chartMatch[1]);
+          const chartConfig: ChartConfig = JSON.parse(chartMatch[1]);
           setDataset(prev => ({
             ...prev,
             charts: [...prev.charts, chartConfig]

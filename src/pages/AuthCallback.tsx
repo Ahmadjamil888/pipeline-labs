@@ -1,30 +1,36 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { Loader2 } from 'lucide-react';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
-
   useEffect(() => {
-    const handleAuthCallback = async () => {
-      const { error } = await supabase.auth.getSession();
-      if (error) {
-        console.error('Error getting session during callback:', error.message);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        navigate('/dashboard'); // redirect after login
+      } else {
+        navigate('/auth');
       }
-      // Redirect to dashboard regardless of whether session was active now
-      // (Supabase will handle redirection or useAuth will pick up the change)
-      navigate('/dashboard');
-    };
-
-    handleAuthCallback();
+    });
   }, [navigate]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0d0d0d] text-white">
-      <div className="text-center">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-500 mx-auto mb-4" />
-        <p className="text-sm text-gray-400">Signing you in safely...</p>
+    <div className="h-screen flex items-center justify-center bg-[#131313]">
+      <div className="flex flex-col items-center gap-8 text-center animate-in fade-in zoom-in duration-700">
+        <div className="relative">
+          <div className="w-20 h-20 border-2 border-white/5 border-t-white rounded-full animate-spin"></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="material-symbols-outlined text-white text-3xl animate-pulse">lock_open</span>
+          </div>
+        </div>
+        <div className="space-y-4">
+          <h2 className="text-3xl font-light tracking-tighter text-white">
+            Finalizing Authentication
+          </h2>
+          <p className="text-neutral-500 font-light max-w-sm mx-auto">
+            Synchronizing your secure data pipeline environment. Please wait a moment while we redirect you to your dashboard.
+          </p>
+        </div>
       </div>
     </div>
   );
