@@ -34,6 +34,7 @@ interface Dataset {
   created_at?: string
   updated_at?: string
   column_analysis?: any
+  objective?: string
 }
 
 interface Profile {
@@ -601,6 +602,7 @@ function DatasetsPage({
   )
 }
 
+
 export default function Dashboard() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
@@ -758,7 +760,7 @@ export default function Dashboard() {
           row_count: rawData.length,
           column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
           status: 'uploaded',
-          preview_rows: rawData.slice(0, 20),
+          preview_rows: JSON.parse(JSON.stringify(rawData.slice(0, 20))),
         }])
 
       if (insertError) {
