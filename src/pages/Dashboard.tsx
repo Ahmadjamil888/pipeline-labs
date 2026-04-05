@@ -915,17 +915,18 @@ Provide a complete analysis and cleaning plan.`
 
       onDatasetsChange()
       
-      const updatedMessages = [...messages, {
-        role: 'assistant',
+      const updatedMessages: { role: 'assistant' | 'user'; content: string }[] = [...messages, {
+        role: 'assistant' as const,
         content: `Cleaning complete! I've applied ${appliedActions.length} cleaning actions:\n${appliedActions.map(a => `- ${a.type}: ${a.columns?.join(', ') || 'all columns'} (${a.reason})`).join('\n')}\n\nYour dataset now has ${cleanedData.length} rows and is ready for machine learning! You can export it or proceed to model training.`
       }]
       setMessages(updatedMessages)
 
       // Save chat history to database using upsert
-      const { error: chatSaveError } = await supabase
+      const { error: chatSaveError } = await (supabase as any)
         .from('dataset_chats')
         .upsert({
           dataset_id: selectedDataset.id,
+          user_id: userId,
           messages: updatedMessages,
           updated_at: new Date().toISOString()
         }, { onConflict: 'dataset_id' })
