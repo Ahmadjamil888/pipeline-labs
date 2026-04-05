@@ -62,6 +62,11 @@ export const AICleanPage: React.FC = () => {
       // First check if user is authenticated
       const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
       
+      // DEBUG: Log auth details for RLS troubleshooting
+      console.log('[DEBUG] Auth User ID:', currentUser?.id);
+      console.log('[DEBUG] Auth Error:', authError);
+      console.log('[DEBUG] User Metadata:', currentUser?.user_metadata);
+      
       if (authError || !currentUser) {
         console.error('Auth error:', authError);
         setAuthError('Please sign in to access this dataset');
@@ -71,6 +76,10 @@ export const AICleanPage: React.FC = () => {
 
       const params = new URLSearchParams(window.location.search);
       const datasetId = params.get('dataset');
+      
+      // DEBUG: Log dataset ID being queried
+      console.log('[DEBUG] Dataset ID from URL:', datasetId);
+      
       if (!datasetId) {
         setIsLoadingDataset(false);
         return;
@@ -85,6 +94,15 @@ export const AICleanPage: React.FC = () => {
           .select('*')
           .eq('id', datasetId)
           .single();
+        
+        // DEBUG: Log the response
+        console.log('[DEBUG] Dataset response:', data);
+        console.log('[DEBUG] Dataset user_id:', data?.user_id);
+        console.log('[DEBUG] Match check:', { 
+          authUid: currentUser.id, 
+          datasetUserId: data?.user_id,
+          match: currentUser.id === data?.user_id 
+        });
         
         if (error) {
           // Handle 403 specifically
