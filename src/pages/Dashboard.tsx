@@ -673,7 +673,7 @@ function AICleanPage({ datasets, onDatasetsChange }: { datasets: Dataset[], onDa
       }
 
       // Load saved chat history from database
-      const { data: chatData, error: chatError } = await supabase
+      const { data: chatData } = await (supabase as any)
         .from('dataset_chats')
         .select('messages')
         .eq('dataset_id', dataset.id)
