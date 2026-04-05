@@ -8,7 +8,7 @@ import {
   Send, Download, Sparkles, BarChart3, Undo2, 
   Upload, Loader2, AlertCircle, CheckCircle2, 
   Database, Table2, ArrowLeft, MessageSquare,
-  ChevronRight, FileSpreadsheet, Wand2
+  ChevronRight, FileSpreadsheet, Wand2, LogIn
 } from 'lucide-react';
 
 interface SuggestionChip {
@@ -50,6 +50,8 @@ export const AICleanPage: React.FC = () => {
   const [input, setInput] = useState('');
   const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
   const [isLoadingDataset, setIsLoadingDataset] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -57,11 +59,26 @@ export const AICleanPage: React.FC = () => {
   // Load dataset metadata from URL if available
   useEffect(() => {
     const loadDatasetMeta = async () => {
+      // First check if user is authenticated
+      const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !currentUser) {
+        console.error('Auth error:', authError);
+        setAuthError('Please sign in to access this dataset');
+        setIsLoadingDataset(false);
+        return;
+      }
+
       const params = new URLSearchParams(window.location.search);
       const datasetId = params.get('dataset');
-      if (!datasetId) return;
+      if (!datasetId) {
+        setIsLoadingDataset(false);
+        return;
+      }
       
       setIsLoadingDataset(true);
+      setAuthError(null);
+      
       try {
         const { data, error } = await supabase
           .from('datasets')
@@ -69,7 +86,14 @@ export const AICleanPage: React.FC = () => {
           .eq('id', datasetId)
           .single();
         
-        if (error) throw error;
+        if (error) {
+          // Handle 403 specifically
+          if (error.code === '403' || error.message?.includes('permission')) {
+            setAuthError('Access denied. Please sign in again or check your permissions.');
+            throw error;
+          }
+          throw error;
+        }
         
         if (data) {
           setDatasetInfo({
@@ -81,16 +105,34 @@ export const AICleanPage: React.FC = () => {
             status: data.status || 'uploaded',
             createdAt: data.created_at
           });
+          setRetryCount(0); // Reset retry count on success
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load dataset info:', err);
+        
+        // Retry logic for auth errors (up to 2 retries)
+        if (retryCount < 2 && (err.code === '403' || err.message?.includes('JWT'))) {
+          console.log(`Retrying dataset load (attempt ${retryCount + 1})...`);
+          setRetryCount(prev => prev + 1);
+          
+          // Try to refresh session
+          const { error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            console.error('Session refresh failed:', refreshError);
+            setAuthError('Session expired. Please sign in again.');
+          } else {
+            // Retry after short delay
+            setTimeout(() => loadDatasetMeta(), 500);
+            return;
+          }
+        }
       } finally {
         setIsLoadingDataset(false);
       }
     };
     
     loadDatasetMeta();
-  }, []);
+  }, [retryCount]);
 
   // Auto-scroll messages
   useEffect(() => {
@@ -188,6 +230,62 @@ export const AICleanPage: React.FC = () => {
     }
     return String(value);
   };
+
+  // Auth error state
+  if (authError) {
+    return (
+      <div className="flex flex-col h-full bg-[#0a0a0a] text-white">
+        {/* Top Bar */}
+        <div className="h-16 border-b border-white/5 bg-[#0f0f0f]/80 backdrop-blur-xl flex items-center justify-between px-6 shrink-0">
+          <div className="flex items-center gap-3">
+            <img 
+              src="/favicon.ico" 
+              alt="Pipeline Labs" 
+              className="h-6 w-auto opacity-90"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/logo-light.png';
+              }}
+            />
+            <span className="text-sm text-neutral-500">/</span>
+            <span className="text-sm text-neutral-400">AI Data Scientist</span>
+          </div>
+        </div>
+
+        {/* Auth Error State */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center max-w-md px-6">
+            <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mx-auto mb-6">
+              <LogIn className="w-8 h-8 text-red-400" />
+            </div>
+            <h2 className="text-xl font-semibold text-white mb-2">Sign In Required</h2>
+            <p className="text-sm text-neutral-400 mb-6">
+              {authError}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <a 
+                href="/auth" 
+                className="inline-flex items-center justify-center gap-2 bg-white text-black px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-neutral-200 transition-colors"
+              >
+                <LogIn className="w-4 h-4" />
+                Sign In
+              </a>
+              <button
+                onClick={() => {
+                  setAuthError(null);
+                  setRetryCount(0);
+                  window.location.reload();
+                }}
+                className="inline-flex items-center justify-center gap-2 bg-white/5 text-white border border-white/10 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 transition-colors"
+              >
+                <Loader2 className="w-4 h-4" />
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Empty state when no dataset
   if (!dataset.currentData.length && !isLoadingDataset) {
