@@ -1003,14 +1003,15 @@ Provide a complete analysis and cleaning plan.`
       if (!data?.success) throw new Error(data?.error || 'AI request failed')
 
       const reply = cleanResponse(data.result)
-      const updatedMessages = [...messages, { role: 'assistant', content: reply }]
+      const updatedMessages: { role: 'assistant' | 'user'; content: string }[] = [...messages, { role: 'assistant' as const, content: reply }]
       setMessages(updatedMessages)
       
       // Save chat history to dataset_chats table
-      const { error: chatSaveError } = await supabase
+      const { error: chatSaveError } = await (supabase as any)
         .from('dataset_chats')
         .upsert({
           dataset_id: selectedDataset.id,
+          user_id: userId,
           messages: updatedMessages,
           updated_at: new Date().toISOString()
         }, { onConflict: 'dataset_id' })
