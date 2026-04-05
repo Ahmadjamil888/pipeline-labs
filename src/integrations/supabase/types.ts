@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      dataset_chats: {
+        Row: {
+          created_at: string | null
+          dataset_id: string
+          id: string
+          messages: Json
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          dataset_id: string
+          id?: string
+          messages?: Json
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          dataset_id?: string
+          id?: string
+          messages?: Json
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dataset_chats_dataset_id_fkey"
+            columns: ["dataset_id"]
+            isOneToOne: true
+            referencedRelation: "datasets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       datasets: {
         Row: {
           column_analysis: Json | null
@@ -88,6 +123,53 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      trained_models: {
+        Row: {
+          accuracy: number | null
+          algorithm: string
+          created_at: string | null
+          dataset_id: string
+          id: string
+          logs: Json | null
+          model_name: string
+          status: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          accuracy?: number | null
+          algorithm: string
+          created_at?: string | null
+          dataset_id: string
+          id?: string
+          logs?: Json | null
+          model_name: string
+          status?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          accuracy?: number | null
+          algorithm?: string
+          created_at?: string | null
+          dataset_id?: string
+          id?: string
+          logs?: Json | null
+          model_name?: string
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trained_models_dataset_id_fkey"
+            columns: ["dataset_id"]
+            isOneToOne: false
+            referencedRelation: "datasets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
