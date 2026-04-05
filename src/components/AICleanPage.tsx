@@ -1,125 +1,388 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePipeline } from '@/context/PipelineContext';
-import { ChartConfig } from '@/types/dataset';
-import { exportCSV } from '@/lib/dataProcessing';
-import { 
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ScatterChart, Scatter, PieChart, Pie, Cell, ComposedChart, Area
-} from 'recharts';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Send, Download, Sparkles, BarChart3, Undo2, 
+  Upload, Loader2, AlertCircle, CheckCircle2, 
+  Database, Table2, ArrowLeft, MessageSquare,
+  ChevronRight, FileSpreadsheet, Wand2
+} from 'lucide-react';
 
-const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+interface SuggestionChip {
+  label: string;
+  action: string;
+}
+
+interface DatasetInfo {
+  id: string;
+  name: string;
+  rowCount: number;
+  columnCount: number;
+  size: string;
+  status: 'processing' | 'ready' | 'uploaded';
+  createdAt: string;
+}
+
+const formatNumber = (num: number): string => {
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+  return num.toLocaleString();
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
 
 export const AICleanPage: React.FC = () => {
   const { 
-    dataset, messages, isProcessing, sendMessage, undoChange, fileName 
+    dataset, messages, isProcessing, sendMessage, undoChange, 
+    fileName 
   } = usePipeline();
+  
+  const { user } = useAuth();
   const [input, setInput] = useState('');
+  const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
+  const [isLoadingDataset, setIsLoadingDataset] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  const handleSend = () => {
-    if (!input.trim() || isProcessing) return;
-    sendMessage(input);
-    setInput('');
-  };
+  // Load dataset metadata from URL if available
+  useEffect(() => {
+    const loadDatasetMeta = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const datasetId = params.get('dataset');
+      if (!datasetId) return;
+      
+      setIsLoadingDataset(true);
+      try {
+        const { data, error } = await supabase
+          .from('datasets')
+          .select('*')
+          .eq('id', datasetId)
+          .single();
+        
+        if (error) throw error;
+        
+        if (data) {
+          setDatasetInfo({
+            id: data.id,
+            name: data.file_name,
+            rowCount: data.row_count || 0,
+            columnCount: data.column_count || 0,
+            size: formatFileSize(data.file_size || 0),
+            status: data.status || 'uploaded',
+            createdAt: data.created_at
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load dataset info:', err);
+      } finally {
+        setIsLoadingDataset(false);
+      }
+    };
+    
+    loadDatasetMeta();
+  }, []);
 
-  const handleExport = () => {
-    if (!dataset.currentData.length) return;
-    const csv = exportCSV(dataset.currentData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${fileName?.split('.')[0] || 'dataset'}_clean.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
+  // Auto-scroll messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  return (
-    <div className="flex flex-col h-full bg-[#131313] text-[#e5e2e1]" style={{ fontFamily: "'Inter', sans-serif" }}>
-      {/* Premium Header Layout Matching Positioning */}
-      <header className="h-20 border-b border-white/5 px-8 flex items-center justify-between shrink-0 bg-black/20 backdrop-blur-3xl z-30">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center">
-              <span className="material-symbols-outlined text-black text-xl">auto_fix</span>
-            </div>
-            <span className="font-bold tracking-tighter text-xl">AI Data Scientist</span>
+  // Auto-resize textarea
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+    }
+  }, [input]);
+
+  const handleSend = useCallback(() => {
+    if (!input.trim() || isProcessing) return;
+    sendMessage(input);
+    setInput('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [input, isProcessing, sendMessage]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleExport = useCallback(async () => {
+    if (!dataset.currentData.length) {
+      toast.error('No data to export');
+      return;
+    }
+    
+    try {
+      const { exportCSV } = await import('@/lib/dataProcessing');
+      const csv = exportCSV(dataset.currentData);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${fileName?.split('.')[0] || 'dataset'}_cleaned.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success('Dataset exported successfully');
+    } catch (error) {
+      toast.error('Failed to export dataset');
+    }
+  }, [dataset.currentData, fileName]);
+
+  const sendSuggestion = (action: string) => {
+    sendMessage(action);
+  };
+
+  const getDefaultSuggestions = (): SuggestionChip[] => [
+    { label: 'Show missing values', action: 'Show me the breakdown of missing values in this dataset' },
+    { label: 'Fill missing data', action: 'Fill all missing values using appropriate methods for each column type' },
+    { label: 'Remove duplicates', action: 'Remove duplicate rows from the dataset' },
+    { label: 'Analyze data quality', action: 'Analyze the overall data quality and identify issues' },
+  ];
+
+  const getStatusBadge = () => {
+    const status = datasetInfo?.status || 'uploaded';
+    const isProcessingStatus = status === 'processing';
+    
+    return (
+      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
+        isProcessingStatus 
+          ? 'bg-yellow-500/10 text-yellow-400' 
+          : 'bg-green-500/10 text-green-400'
+      }`}>
+        {isProcessingStatus ? (
+          <>
+            <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+            Processing
+          </>
+        ) : (
+          <>
+            <CheckCircle2 className="w-3 h-3" />
+            Ready
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderCellValue = (value: unknown): React.ReactNode => {
+    if (value === null || value === undefined || value === '') {
+      return <span className="text-neutral-500 italic">null</span>;
+    }
+    return String(value);
+  };
+
+  // Empty state when no dataset
+  if (!dataset.currentData.length && !isLoadingDataset) {
+    return (
+      <div className="flex flex-col h-full bg-[#0a0a0a] text-white">
+        {/* Top Bar */}
+        <div className="h-16 border-b border-white/5 bg-[#0f0f0f]/80 backdrop-blur-xl flex items-center justify-between px-6 shrink-0">
+          <div className="flex items-center gap-3">
+            <img 
+              src="/favicon.ico" 
+              alt="Pipeline Labs" 
+              className="h-6 w-auto opacity-90"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/logo-light.png';
+              }}
+            />
+            <span className="text-sm text-neutral-500">/</span>
+            <span className="text-sm text-neutral-400">AI Data Scientist</span>
           </div>
-          <nav className="hidden xl:flex items-center gap-6 text-sm text-neutral-400 font-medium">
-            <span className="text-white">Active Dataset: {fileName || 'Untitled'}</span>
-            <span className="opacity-40">|</span>
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">table_rows</span> {dataset.currentData.length} Rows
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">history</span> {dataset.versions.length} Version History
-            </span>
-          </nav>
         </div>
-        
-        <div className="flex items-center gap-4">
-          {dataset.versions.length > 0 && (
-            <button 
-              onClick={undoChange}
-              className="p-2 hover:bg-white/10 rounded-full transition-all text-neutral-400 hover:text-white"
-              title="Undo Last Step"
+
+        {/* Empty State */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center max-w-md px-6">
+            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-6">
+              <Database className="w-8 h-8 text-neutral-400" />
+            </div>
+            <h2 className="text-xl font-semibold text-white mb-2">No Dataset Selected</h2>
+            <p className="text-sm text-neutral-400 mb-6">
+              Select a dataset from your library or upload a new one to start cleaning with AI.
+            </p>
+            <a 
+              href="/dashboard/datasets" 
+              className="inline-flex items-center gap-2 bg-white text-black px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-neutral-200 transition-colors"
             >
-              <span className="material-symbols-outlined text-xl">undo</span>
+              <Upload className="w-4 h-4" />
+              Go to Datasets
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-[#0a0a0a] text-white overflow-hidden">
+      {/* Top Bar */}
+      <header className="h-16 border-b border-white/5 bg-[#0f0f0f]/80 backdrop-blur-xl flex items-center justify-between px-6 shrink-0 z-20">
+        <div className="flex items-center gap-4">
+          <a 
+            href="/dashboard/datasets" 
+            className="p-2 hover:bg-white/5 rounded-lg transition-colors text-neutral-400 hover:text-white"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </a>
+          <div className="flex items-center gap-3">
+            <img 
+              src="/favicon.ico" 
+              alt="Pipeline Labs" 
+              className="h-5 w-auto"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/logo-light.png';
+              }}
+            />
+            <span className="text-neutral-600">/</span>
+            <span className="text-sm font-medium truncate max-w-[200px] sm:max-w-[300px]">
+              {datasetInfo?.name || fileName || 'Untitled Dataset'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-3">
+          {dataset.versions.length > 0 && (
+            <button
+              onClick={undoChange}
+              className="p-2 hover:bg-white/5 rounded-lg transition-colors text-neutral-400 hover:text-white"
+              title="Undo last change"
+            >
+              <Undo2 className="w-4 h-4" />
             </button>
           )}
-          <div className="h-8 w-[1px] bg-white/10 mx-2" />
+          
           <button 
-            onClick={handleExport}
-            className="bg-white text-black px-6 py-2 rounded-full text-xs font-bold hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+            className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm text-neutral-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
           >
-            <span className="material-symbols-outlined text-xs">download</span>
-            Export Dataset
+            <Wand2 className="w-4 h-4" />
+            <span>AI Analysis</span>
+          </button>
+          
+          <button 
+            className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm text-neutral-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Plots</span>
+          </button>
+          
+          <button
+            onClick={handleExport}
+            disabled={!dataset.currentData.length}
+            className="flex items-center gap-2 bg-white text-black px-4 py-2 rounded-lg text-sm font-medium hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Export</span>
           </button>
         </div>
       </header>
 
+      {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Side: Agent Interaction (Dark Mode) */}
-        <div className="w-[400px] flex flex-col border-r border-white/5 bg-black/10 transition-all duration-500">
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-white/5">
-            <AnimatePresence>
+        {/* Chat Panel */}
+        <div className="w-full sm:w-[380px] flex flex-col border-r border-white/5 bg-[#0f0f0f]/50 backdrop-blur-xl">
+          {/* Chat Header */}
+          <div className="p-5 border-b border-white/5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
+                <Sparkles className="w-5 h-5 text-[#d5c5a6]" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm">Pipeline AI</h3>
+                <p className="text-xs text-neutral-500">Ask about your data or request transformations</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div 
+            ref={chatContainerRef}
+            className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-white/10"
+          >
+            <AnimatePresence mode="popLayout">
               {messages.length === 0 && (
-                <div className="h-full flex flex-col items-center justify-center text-center opacity-30 mt-20">
-                  <span className="material-symbols-outlined text-5xl mb-4">robot_2</span>
-                  <p className="text-sm font-light">Describe your cleaning or analysis goal.<br />I'll handle the transformations.</p>
-                </div>
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-center py-8"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-4">
+                    <MessageSquare className="w-6 h-6 text-neutral-500" />
+                  </div>
+                  <p className="text-sm text-neutral-500">
+                    Start a conversation with AI to clean and analyze your data
+                  </p>
+                </motion.div>
               )}
+
               {messages.map((msg, i) => (
                 <motion.div
                   key={i}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
                 >
-                  <div 
-                    className={`max-w-[100%] p-4 rounded-2xl text-sm leading-relaxed border ${
-                      msg.role === 'user' 
-                        ? 'bg-neutral-800 border-white/10 text-white rounded-tr-none' 
-                        : 'bg-black/30 border-white/5 rounded-tl-none'
-                    }`}
-                  >
-                    {msg.isThinking && (
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '200ms' }} />
-                        <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '400ms' }} />
-                        <span className="text-[10px] uppercase font-bold text-neutral-500 tracking-widest ml-2">Analyzing</span>
+                  <div className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-medium ${
+                    msg.role === 'user' 
+                      ? 'bg-white/10 text-white' 
+                      : 'bg-[#d5c5a6]/10 text-[#d5c5a6]'
+                  }`}>
+                    {msg.role === 'user' ? (
+                      user?.email?.[0].toUpperCase() || 'U'
+                    ) : (
+                      <Sparkles className="w-4 h-4" />
+                    )}
+                  </div>
+                  <div className={`flex-1 max-w-[85%] ${msg.role === 'user' ? 'text-right' : ''}`}>
+                    <div className={`inline-block text-sm leading-relaxed px-4 py-3 rounded-2xl ${
+                      msg.role === 'user'
+                        ? 'bg-white/10 text-white rounded-tr-sm'
+                        : 'bg-white/5 text-neutral-200 rounded-tl-sm border border-white/5'
+                    }`}>
+                      {msg.isThinking && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span className="text-xs text-neutral-400">Analyzing...</span>
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap">
+                        {msg.content.replace(/<(chart|transform)>[\s\S]*?<\/(chart|transform)>/g, '').trim()}
+                      </div>
+                    </div>
+                    
+                    {/* Suggestion Chips for AI messages */}
+                    {msg.role === 'assistant' && i === messages.length - 1 && !msg.isThinking && (
+                      <div className="flex flex-wrap gap-2 mt-3 justify-start">
+                        {getDefaultSuggestions().map((chip) => (
+                          <button
+                            key={chip.label}
+                            onClick={() => sendSuggestion(chip.action)}
+                            className="px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-full transition-all text-neutral-300 hover:text-white"
+                          >
+                            {chip.label}
+                          </button>
+                        ))}
                       </div>
                     )}
-                    <div className="whitespace-pre-wrap">
-                      {msg.content.replace(/<(chart|transform)>[\s\S]*?<\/(chart|transform)>/g, '').trim()}
-                    </div>
                   </div>
                 </motion.div>
               ))}
@@ -127,107 +390,96 @@ export const AICleanPage: React.FC = () => {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-6 bg-black/20 border-t border-white/5">
-            <div className="relative">
-              <input
+          {/* Chat Input */}
+          <div className="p-4 border-t border-white/5">
+            <div className="relative bg-white/5 border border-white/10 rounded-xl focus-within:border-white/20 focus-within:bg-white/[0.07] transition-all">
+              <textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="Ask me to clean the data..."
-                className="w-full bg-white/5 border border-white/10 text-white rounded-2xl py-4 pl-5 pr-14 text-sm focus:ring-1 focus:ring-white/40 outline-none transition-all placeholder:text-neutral-600"
-              />
-              <button 
-                onClick={handleSend}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask about your data or request transformations..."
+                rows={1}
+                className="w-full bg-transparent border-none rounded-xl px-4 py-3 pr-12 text-sm text-white placeholder:text-neutral-500 resize-none outline-none min-h-[44px] max-h-[120px]"
                 disabled={isProcessing}
-                className="absolute right-2 top-2 bottom-2 w-10 bg-white text-black rounded-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center disabled:opacity-30 disabled:scale-100"
+              />
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() || isProcessing}
+                className="absolute right-2 bottom-2 p-2 bg-white text-black rounded-lg hover:bg-neutral-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                <span className="material-symbols-outlined text-lg">arrow_upward</span>
+                {isProcessing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
               </button>
             </div>
-            <p className="text-[10px] text-neutral-500 mt-3 text-center uppercase tracking-widest font-medium opacity-50">Experimental AI Data Analyst v2.0</p>
+            <p className="text-[10px] text-neutral-600 mt-2 text-center">
+              AI may produce inaccurate results. Verify important information.
+            </p>
           </div>
         </div>
 
-        {/* Right Side: Visual Data Center */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Top: Insights Area */}
-          <div className="h-2/5 p-8 overflow-y-auto border-b border-white/5 bg-white/[0.01]">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-2 h-2 rounded-full bg-violet-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]" />
-              <h3 className="text-sm uppercase tracking-widest font-bold text-neutral-500">Live Workspace Analysis</h3>
+        {/* Dataset Preview */}
+        <div className="hidden sm:flex flex-1 flex-col bg-[#0a0a0a]">
+          {/* Dataset Info Bar */}
+          <div className="h-14 border-b border-white/5 flex items-center justify-between px-6 shrink-0">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2 text-sm">
+                <Table2 className="w-4 h-4 text-neutral-500" />
+                <span className="text-neutral-400">Rows:</span>
+                <span className="font-medium">{formatNumber(datasetInfo?.rowCount || dataset.currentData.length)}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <FileSpreadsheet className="w-4 h-4 text-neutral-500" />
+                <span className="text-neutral-400">Columns:</span>
+                <span className="font-medium">{datasetInfo?.columnCount || (dataset.currentData[0] ? Object.keys(dataset.currentData[0]).length : 0)}</span>
+              </div>
+              {datasetInfo?.size && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Database className="w-4 h-4 text-neutral-500" />
+                  <span className="text-neutral-400">Size:</span>
+                  <span className="font-medium">{datasetInfo.size}</span>
+                </div>
+              )}
             </div>
-            
-            {dataset.charts.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center opacity-10">
-                <span className="material-symbols-outlined text-[120px]">bubble_chart</span>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                {dataset.charts.map((chart, idx) => (
-                  <motion.div 
-                    key={idx}
-                    initial={{ opacity: 0, scale: 0.98 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="bg-neutral-900 border border-white/5 p-6 rounded-[2rem] h-[340px] flex flex-col shadow-2xl"
-                  >
-                    <div className="flex justify-between items-start mb-6">
-                      <div className="space-y-1">
-                        <h4 className="text-white font-medium text-lg tracking-tight">{chart.title}</h4>
-                        {chart.description && <p className="text-xs text-neutral-500 font-light">{chart.description}</p>}
-                      </div>
-                      <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-neutral-400 text-sm">filter_list</span>
-                      </div>
-                    </div>
-                    <div className="flex-1 w-full min-h-0 opacity-80">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <DynamicChart chart={chart} />
-                      </ResponsiveContainer>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
+            {getStatusBadge()}
           </div>
 
-          {/* Bottom: Pro Data Grid */}
-          <div className="flex-1 p-8 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
-                <h3 className="text-sm uppercase tracking-widest font-bold text-neutral-500">Structured Data Explorer</h3>
-                <span className="text-[10px] text-neutral-600 bg-white/5 px-2 py-0.5 rounded-full ml-4">
-                  Viewing sample of {dataset.currentData.length} records
-                </span>
-              </div>
-            </div>
-
-            <div className="flex-1 border border-white/10 rounded-[2rem] overflow-hidden bg-black/20 shadow-inner group transition-all duration-500 hover:border-white/20">
-              <div className="h-full overflow-auto scrollbar-thin scrollbar-white/10">
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead className="sticky top-0 bg-[#131313] z-20">
+          {/* Data Table */}
+          <div className="flex-1 overflow-auto p-6">
+            {dataset.currentData.length > 0 ? (
+              <div className="border border-white/5 rounded-xl overflow-hidden bg-white/[0.02]">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-[#0f0f0f] z-10">
                     <tr className="border-b border-white/10">
-                      {dataset.currentData.length > 0 && Object.keys(dataset.currentData[0]).map(key => (
-                        <th key={key} className="px-6 py-5 font-bold text-neutral-400 uppercase tracking-wider min-w-[160px]">
-                          <div className="flex items-center gap-2">
+                      {Object.keys(dataset.currentData[0]).map((key) => (
+                        <th 
+                          key={key} 
+                          className="px-4 py-3 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wider whitespace-nowrap"
+                        >
+                          <div className="flex items-center gap-1">
                             {key}
-                            <span className="material-symbols-outlined text-[12px] opacity-20">unfold_more</span>
+                            <ChevronRight className="w-3 h-3 text-neutral-600 rotate-90" />
                           </div>
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {dataset.currentData.slice(0, 30).map((row, i) => (
-                      <tr key={i} className="hover:bg-white/[0.03] transition-all group/row">
+                    {dataset.currentData.slice(0, 100).map((row, idx) => (
+                      <tr 
+                        key={idx} 
+                        className="hover:bg-white/[0.03] transition-colors"
+                      >
                         {Object.values(row).map((val, j) => (
-                          <td key={j} className="px-6 py-4 border-r border-white/5 last:border-r-0 text-neutral-300 font-light">
-                            <div className="truncate max-w-[220px]" title={String(val)}>
-                              {val === null || val === undefined || val === '' ? (
-                                <span className="text-red-500/50 italic font-medium">null</span>
-                              ) : (
-                                String(val)
-                              )}
+                          <td 
+                            key={j} 
+                            className="px-4 py-3 text-neutral-300 whitespace-nowrap"
+                          >
+                            <div className="truncate max-w-[200px]" title={String(val ?? '')}>
+                              {renderCellValue(val)}
                             </div>
                           </td>
                         ))}
@@ -235,8 +487,20 @@ export const AICleanPage: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+                {dataset.currentData.length > 100 && (
+                  <div className="px-4 py-3 text-center text-xs text-neutral-500 border-t border-white/5">
+                    Showing first 100 rows of {formatNumber(dataset.currentData.length)} total
+                  </div>
+                )}
               </div>
-            </div>
+            ) : (
+              <div className="h-full flex items-center justify-center">
+                <div className="text-center">
+                  <AlertCircle className="w-12 h-12 text-neutral-600 mx-auto mb-4" />
+                  <p className="text-neutral-500">No data available</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -244,65 +508,5 @@ export const AICleanPage: React.FC = () => {
   );
 };
 
-const DynamicChart: React.FC<{ chart: ChartConfig }> = ({ chart }) => {
-  const { type, data, xKey, yKey } = chart;
-  
-  if (type === 'bar') {
-    return (
-      <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-        <XAxis dataKey={xKey} axisLine={false} tickLine={false} style={{ fontSize: '10px' }} />
-        <YAxis axisLine={false} tickLine={false} style={{ fontSize: '10px' }} />
-        <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-        <Bar dataKey={yKey} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-      </BarChart>
-    );
-  }
-  
-  if (type === 'line') {
-    return (
-      <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-        <XAxis dataKey={xKey} axisLine={false} tickLine={false} style={{ fontSize: '10px' }} />
-        <YAxis axisLine={false} tickLine={false} style={{ fontSize: '10px' }} />
-        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-        <Line type="monotone" dataKey={yKey} stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4, fill: '#8b5cf6' }} activeDot={{ r: 6 }} />
-      </LineChart>
-    );
-  }
-
-  if (type === 'scatter') {
-    return (
-      <ScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-        <XAxis dataKey={xKey} axisLine={false} tickLine={false} style={{ fontSize: '10px' }} type="number" name={xKey} />
-        <YAxis dataKey={yKey} axisLine={false} tickLine={false} style={{ fontSize: '10px' }} type="number" name={yKey} />
-        <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-        <Scatter data={data} fill="#8b5cf6" />
-      </ScatterChart>
-    );
-  }
-
-  if (type === 'pie') {
-    return (
-      <PieChart>
-        <Pie
-          data={data}
-          innerRadius={60}
-          outerRadius={80}
-          paddingAngle={5}
-          dataKey={yKey || 'value'}
-        >
-          {data.map((_, index) => (
-            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-          ))}
-        </Pie>
-        <Tooltip />
-        <Legend verticalAlign="bottom" height={36} />
-      </PieChart>
-    );
-  }
-
-  return <div>Unsupported Chart Type</div>;
-};
+export default AICleanPage;
 
