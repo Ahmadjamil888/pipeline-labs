@@ -927,7 +927,7 @@ Provide a complete analysis and cleaning plan.`
         .from('dataset_chats')
         .upsert({
           dataset_id: selectedDataset.id,
-          user_id: userId,
+          user_id: user!.id,
           messages: updatedMessages,
           updated_at: new Date().toISOString()
         }, { onConflict: 'dataset_id' })
@@ -1012,7 +1012,7 @@ Provide a complete analysis and cleaning plan.`
         .from('dataset_chats')
         .upsert({
           dataset_id: selectedDataset.id,
-          user_id: userId,
+          user_id: user!.id,
           messages: updatedMessages,
           updated_at: new Date().toISOString()
         }, { onConflict: 'dataset_id' })
@@ -1497,7 +1497,7 @@ Recommend the best ML algorithm.`
         .from('trained_models')
         .insert({
           dataset_id: dataset.id,
-          user_id: userId,
+          user_id: user!.id,
           model_name: `${dataset.file_name.replace(/\.[^/.]+$/, '')}_${algorithm}`,
           algorithm,
           status: 'trained',
