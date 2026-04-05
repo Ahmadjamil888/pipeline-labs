@@ -110,16 +110,16 @@ export default function Auth() {
     setError(null);
 
     try {
-      const { lovable } = await import("@/integrations/lovable");
-      const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
-        extraParams: { prompt: "select_account" },
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: { prompt: 'select_account' }
+        }
       });
 
-      if (result.error) throw result.error;
-      if (result.redirected) return;
-
-      navigate("/dashboard");
+      if (error) throw error;
+      // No need to navigate here, the browser will redirect to Google then back to /auth/callback
     } catch (err: any) {
       console.error("Google auth error:", err);
       setError(err.message || "Google sign-in failed");

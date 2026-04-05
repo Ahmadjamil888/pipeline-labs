@@ -1,17 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Papa from 'papaparse';
 import { usePipeline } from '@/context/PipelineContext';
 import { ChartConfig } from '@/types/dataset';
-import { 
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ScatterChart, Scatter, PieChart, Pie, Cell, ComposedChart, Area
-} from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+import Plotly from 'plotly.js-dist-min';
 
 export const AICleanPage: React.FC = () => {
   const { 
-    dataset, messages, isProcessing, sendMessage, undoChange, applyTransform 
+    dataset, fileName, messages, isProcessing, sendMessage, undoChange, applyTransform 
   } = usePipeline();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -22,6 +18,20 @@ export const AICleanPage: React.FC = () => {
     setInput('');
   };
 
+  const handleExport = () => {
+    if (!dataset.currentData.length) return;
+    const csv = Papa.unparse(dataset.currentData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `cleaned_${fileName || 'dataset'}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -29,16 +39,24 @@ export const AICleanPage: React.FC = () => {
   return (
     <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-slate-50/50">
       {/* Left Chat Sidebar (350px) */}
-      <div className="w-[350px] flex flex-col border-r bg-white/80 backdrop-blur-md shadow-xl z-10 transition-all duration-300">
-        <div className="p-4 border-b bg-gradient-to-r from-violet-600 to-indigo-600 text-white flex justify-between items-center">
-          <div>
-            <h2 className="font-bold text-lg">AI Data Scientist</h2>
-            <p className="text-xs opacity-80">Autonomous Exploration Active</p>
+      <div className="w-[350px] flex flex-col border-r bg-white/80 backdrop-blur-md shadow-2xl z-20 transition-all duration-300">
+        <div className="p-5 border-b flex justify-between items-center premium-blur relative z-10 border-white/20">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-violet-200">
+              <span className="material-symbols-outlined text-xl">auto_awesome</span>
+            </div>
+            <div>
+              <h2 className="font-black text-slate-800 tracking-tight leading-tight">AI Scientist</h2>
+              <div className="flex items-center gap-1.5 leading-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest opacity-60">Autonomous Active</p>
+              </div>
+            </div>
           </div>
           {dataset.versions.length > 0 && (
             <button 
               onClick={undoChange}
-              className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+              className="p-2 hover:bg-slate-100 rounded-xl transition-all text-slate-400 hover:text-violet-600 hover:scale-110 active:scale-95"
               title="Undo Last Transformation"
             >
               <span className="material-symbols-outlined text-sm">undo</span>
@@ -46,7 +64,7 @@ export const AICleanPage: React.FC = () => {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-6 vibrant-gradient">
           <AnimatePresence>
             {messages.map((msg, i) => (
               <motion.div
@@ -56,17 +74,37 @@ export const AICleanPage: React.FC = () => {
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div 
-                  className={`max-w-[90%] p-3 rounded-2xl text-sm shadow-sm ${
+                  className={`max-w-[90%] p-4 rounded-3xl text-sm shadow-sm transition-all hover:shadow-md ${
                     msg.role === 'user' 
-                      ? 'bg-violet-600 text-white rounded-tr-none' 
-                      : 'bg-white border rounded-tl-none'
+                      ? 'bg-gradient-to-br from-violet-600 to-indigo-600 text-white rounded-tr-none' 
+                      : 'glass-card rounded-tl-none border-white/40'
                   }`}
                 >
                   {msg.isThinking && <div className="flex items-center gap-2 mb-2 text-[10px] uppercase tracking-wider font-bold text-violet-500 animate-pulse">
                     <span className="material-symbols-outlined text-xs">monitoring</span> AI is Analyzing...
                   </div>}
                   <div className="whitespace-pre-wrap leading-relaxed">
-                    {msg.content.replace(/<chart>[\s\S]*?<\/chart>/g, '').trim()}
+                    {msg.role === 'assistant' ? (
+                      <div className="space-y-4">
+                        {msg.content.includes('THOUGHTS:') && (
+                          <div className="bg-slate-50/50 rounded-2xl p-4 border border-slate-200/30 backdrop-blur-sm">
+                            <div className="text-[10px] uppercase text-violet-500 font-black mb-1 opacity-60 tracking-widest">Analyst Reasoning</div>
+                            <div className="italic text-slate-500 text-xs leading-relaxed">
+                              {msg.content.match(/THOUGHTS:([\s\S]*?)(?=\n\n|$)/)?.[1] || "Deciphering data structures..."}
+                            </div>
+                          </div>
+                        )}
+                        <div className="text-slate-800 font-medium">
+                          {msg.content
+                            .replace(/THOUGHTS:([\s\S]*?)(?=\n\n|$)/, '')
+                            .replace(/<chart>[\s\S]*?<\/chart>/g, '')
+                            .replace(/<transform>[\s\S]*?<\/transform>/g, '')
+                            .trim()}
+                        </div>
+                      </div>
+                    ) : (
+                      msg.content
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -75,19 +113,19 @@ export const AICleanPage: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="p-4 border-t bg-white">
+        <div className="p-4 border-t bg-white/50 backdrop-blur-md">
           <div className="relative group">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               placeholder="Ask for an experiment..."
-              className="w-full bg-slate-100 border-none rounded-2xl py-3 pl-4 pr-12 text-sm focus:ring-2 focus:ring-violet-400 transition-all group-hover:bg-slate-200/50"
+              className="w-full bg-slate-100/50 border border-slate-200/50 rounded-2xl py-3 pl-4 pr-12 text-sm focus:ring-2 focus:ring-violet-400 transition-all group-hover:bg-slate-200/80"
             />
             <button 
               onClick={handleSend}
               disabled={isProcessing}
-              className="absolute right-2 top-2 p-1.5 bg-violet-600 text-white rounded-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+              className="absolute right-2 top-2 p-1.5 bg-violet-600 text-white rounded-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 shadow-lg shadow-violet-200"
             >
               <span className="material-symbols-outlined">send</span>
             </button>
@@ -97,44 +135,50 @@ export const AICleanPage: React.FC = () => {
 
       {/* Main Workspace */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top: Insights/Charts (Flexible Height) */}
-        <div className="h-1/2 p-6 overflow-y-auto border-b bg-slate-50/30">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <span className="material-symbols-outlined text-violet-600">bar_chart</span> Live Insights
-            </h3>
-            <div className="text-xs text-slate-500 bg-white px-3 py-1 rounded-full border shadow-sm">
-              {dataset.charts.length} Visualizations Generated
+        {/* Top: Insights/Charts */}
+        <div className="h-1/2 p-8 overflow-y-auto border-b bg-slate-50/10">
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                <span className="material-symbols-outlined text-3xl text-violet-600 p-2 bg-violet-50 rounded-2xl">insights</span> 
+                Live Insights
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 ml-14">Interactive visualizations derived from your recent experiments.</p>
+            </div>
+            <div className="text-[10px] text-slate-400 bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm uppercase font-black tracking-widest">
+              {dataset.charts.length} Insights Found
             </div>
           </div>
           
           {dataset.charts.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center opacity-40">
-              <span className="material-symbols-outlined text-6xl mb-4">analytics</span>
-              <p>No visualizations yet. Ask me to "Show distribution of X" or "Find correlations".</p>
+            <div className="h-full flex flex-col items-center justify-center opacity-30 mt-[-40px]">
+              <div className="w-24 h-24 rounded-[40px] bg-slate-100 flex items-center justify-center mb-6">
+                <span className="material-symbols-outlined text-5xl">analytics</span>
+              </div>
+              <p className="text-lg font-medium text-slate-500">No visualizations yet.</p>
+              <p className="text-sm text-slate-400 mt-1 text-center max-w-xs">Ask me to "Show distribution of X" or "Find correlations" to get started.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
               {dataset.charts.map((chart, idx) => (
                 <motion.div 
                   key={idx}
                   initial={{ scale: 0.95, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  className="bg-white p-6 rounded-3xl shadow-sm border group hover:shadow-xl transition-all h-[350px] flex flex-col"
+                  whileHover={{ y: -5 }}
+                  className="bg-white p-6 rounded-[40px] shadow-xl shadow-slate-200/50 border border-slate-100 group transition-all h-[400px] flex flex-col relative overflow-hidden"
                 >
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h4 className="font-bold text-slate-700">{chart.title}</h4>
-                      {chart.description && <p className="text-xs text-slate-500">{chart.description}</p>}
-                    </div>
-                    <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-100 rounded transition-all">
-                      <span className="material-symbols-outlined text-sm">fullscreen</span>
+                  <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button className="p-2 bg-slate-50 rounded-xl hover:bg-slate-100 text-slate-400">
+                      <span className="material-symbols-outlined text-sm">open_in_full</span>
                     </button>
                   </div>
-                  <div className="flex-1 w-full min-h-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <DynamicChart chart={chart} />
-                    </ResponsiveContainer>
+                  <div className="mb-4">
+                    <h4 className="font-black text-slate-800 text-lg tracking-tight">{chart.title}</h4>
+                    {chart.description && <p className="text-xs text-slate-400 font-medium">{chart.description}</p>}
+                  </div>
+                  <div className="flex-1 w-full min-h-0 bg-slate-50/30 rounded-3xl">
+                    <DynamicChart chart={chart} />
                   </div>
                 </motion.div>
               ))}
@@ -143,39 +187,41 @@ export const AICleanPage: React.FC = () => {
         </div>
 
         {/* Bottom: Data Grid */}
-        <div className="flex-1 p-6 overflow-hidden bg-white">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <span className="material-symbols-outlined text-indigo-600">table_view</span> Data Explorer
-              <span className="text-xs font-normal text-slate-400 ml-2">Showing 20 of {dataset.currentData.length} records</span>
-            </h3>
-            <div className="flex gap-2">
-               <button className="text-xs py-1.5 px-3 rounded-xl border hover:bg-slate-50 transition-all flex items-center gap-1">
-                 <span className="material-symbols-outlined text-xs">download</span> Export
-               </button>
+        <div className="flex-1 p-8 overflow-hidden bg-white relative">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                <span className="material-symbols-outlined text-3xl text-indigo-600 p-2 bg-indigo-50 rounded-2xl">table_rows</span> 
+                Data Explorer
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 ml-14">Showing first 20 of {dataset.currentData.length} records</p>
             </div>
+            <button 
+              onClick={handleExport}
+              className="group px-6 py-3 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center gap-2 hover:bg-violet-600 transition-all shadow-xl shadow-slate-200 hover:shadow-violet-200 active:scale-95"
+            >
+              <span className="material-symbols-outlined text-sm group-hover:animate-bounce">download</span> 
+              Download CSV
+            </button>
           </div>
 
-          <div className="border rounded-2xl overflow-auto h-[calc(100%-40px)] shadow-inner bg-slate-50/30">
+          <div className="border border-slate-100 rounded-[32px] overflow-auto h-[calc(100%-80px)] shadow-2xl shadow-slate-200/40 bg-white">
             <table className="w-full text-sm text-left border-collapse">
-              <thead className="sticky top-0 bg-white border-b z-20 shadow-sm">
+              <thead className="sticky top-0 bg-white border-b z-20">
                 <tr>
                   {dataset.currentData.length > 0 && Object.keys(dataset.currentData[0]).map(key => (
-                    <th key={key} className="px-4 py-3 font-semibold text-slate-600 bg-slate-100/50 min-w-[150px]">
-                      <div className="flex items-center justify-between">
-                        {key}
-                        <span className="material-symbols-outlined text-[10px] opacity-40">unfold_more</span>
-                      </div>
+                    <th key={key} className="px-6 py-5 font-black text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50/50 min-w-[200px]">
+                      {key}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-50">
                 {dataset.currentData.slice(0, 20).map((row, i) => (
-                  <tr key={i} className="bg-white hover:bg-violet-50/30 border-b last:border-0 transition-colors">
+                  <tr key={i} className="hover:bg-violet-50/20 transition-colors">
                     {Object.values(row).map((val, j) => (
-                      <td key={j} className="px-4 py-2 border-r last:border-r-0 text-slate-600">
-                        <div className="truncate max-w-[200px]" title={String(val)}>
+                      <td key={j} className="px-6 py-4 text-slate-600 font-medium">
+                        <div className="truncate max-w-[250px]" title={String(val)}>
                           {String(val ?? 'null')}
                         </div>
                       </td>
@@ -191,64 +237,31 @@ export const AICleanPage: React.FC = () => {
   );
 };
 
-const DynamicChart: React.FC<{ chart: ChartConfig }> = ({ chart }) => {
-  const { type, data, xKey, yKey, zKey } = chart;
-  
-  if (type === 'bar') {
-    return (
-      <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-        <XAxis dataKey={xKey} axisLine={false} tickLine={false} style={{ fontSize: '10px' }} />
-        <YAxis axisLine={false} tickLine={false} style={{ fontSize: '10px' }} />
-        <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-        <Bar dataKey={yKey} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-      </BarChart>
-    );
-  }
-  
-  if (type === 'line') {
-    return (
-      <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-        <XAxis dataKey={xKey} axisLine={false} tickLine={false} style={{ fontSize: '10px' }} />
-        <YAxis axisLine={false} tickLine={false} style={{ fontSize: '10px' }} />
-        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-        <Line type="monotone" dataKey={yKey} stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4, fill: '#8b5cf6' }} activeDot={{ r: 6 }} />
-      </LineChart>
-    );
-  }
+const DynamicChart: React.FC<{ chart: any }> = ({ chart }) => {
+  const chartRef = useRef<HTMLDivElement>(null);
 
-  if (type === 'scatter') {
-    return (
-      <ScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-        <XAxis dataKey={xKey} axisLine={false} tickLine={false} style={{ fontSize: '10px' }} type="number" name={xKey} />
-        <YAxis dataKey={yKey} axisLine={false} tickLine={false} style={{ fontSize: '10px' }} type="number" name={yKey} />
-        <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-        <Scatter data={data} fill="#8b5cf6" />
-      </ScatterChart>
-    );
-  }
+  useEffect(() => {
+    if (chartRef.current && chart.data) {
+      const layout = {
+        ...chart.layout,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { family: 'Inter, sans-serif', size: 11 },
+        margin: { t: 40, r: 20, b: 60, l: 60 },
+        autosize: true,
+        showlegend: chart.data.length > 1,
+        hovermode: 'closest' as const,
+        colorway: ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899']
+      };
 
-  if (type === 'pie') {
-    return (
-      <PieChart>
-        <Pie
-          data={data}
-          innerRadius={60}
-          outerRadius={80}
-          paddingAngle={5}
-          dataKey={yKey || 'value'}
-        >
-          {data.map((_, index) => (
-            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-          ))}
-        </Pie>
-        <Tooltip />
-        <Legend verticalAlign="bottom" height={36} />
-      </PieChart>
-    );
-  }
+      const config = {
+        responsive: true,
+        displayModeBar: false,
+      };
 
-  return <div>Unsupported Chart Type</div>;
+      Plotly.newPlot(chartRef.current, chart.data, layout, config);
+    }
+  }, [chart]);
+
+  return <div ref={chartRef} className="w-full h-full" />;
 };

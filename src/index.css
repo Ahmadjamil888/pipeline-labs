@@ -39,6 +39,12 @@
     --cursor-card: rgba(38, 37, 30, 0.03);
     --cursor-card-dark: rgba(237, 236, 236, 0.03);
     --cursor-accent: #d4a853;
+    --glass-bg: rgba(255, 255, 255, 0.4);
+    --glass-border: rgba(255, 255, 255, 0.2);
+    --glass-shadow: rgba(31, 38, 135, 0.05);
+    --vibrant-violet: #8B5CF6;
+    --vibrant-indigo: #6366F1;
+    --vibrant-emerald: #10B981;
   }
 
   .dark {
@@ -167,7 +173,19 @@
   }
 
   .sidebar-item-active {
-    @apply text-foreground bg-secondary;
+    @apply text-foreground bg-secondary/50 border-r-2 border-accent/20;
+  }
+
+  .glass-card {
+    @apply bg-white/40 backdrop-blur-xl border border-white/20 shadow-lg;
+  }
+
+  .premium-blur {
+    @apply backdrop-blur-2xl bg-white/60;
+  }
+
+  .vibrant-gradient {
+    @apply bg-gradient-to-tr from-violet-500/10 via-transparent to-emerald-500/10;
   }
 }
 

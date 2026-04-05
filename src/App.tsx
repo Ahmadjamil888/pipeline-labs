@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/context/AuthContext";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
+import AuthCallback from "./pages/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import ApiDocs from "./pages/ApiDocs";
@@ -27,6 +28,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             {/* SDK/API Routes - External documentation only, NOT main app functionality */}
             <Route path="/api/docs" element={<ApiDocs />} />
             <Route path="/api/status" element={<ApiStatus />} />
