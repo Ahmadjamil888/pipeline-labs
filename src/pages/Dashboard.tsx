@@ -1497,7 +1497,7 @@ Recommend the best ML algorithm.`
         .from('trained_models')
         .insert({
           dataset_id: dataset.id,
-          user_id: user!.id,
+          user_id: userId,
           model_name: `${dataset.file_name.replace(/\.[^/.]+$/, '')}_${algorithm}`,
           algorithm,
           status: 'trained',
