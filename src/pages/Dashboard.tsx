@@ -20,6 +20,7 @@ interface Dataset {
   created_at?: string
   updated_at?: string
   column_analysis?: any
+  objective?: string
 }
 
 interface Profile {
