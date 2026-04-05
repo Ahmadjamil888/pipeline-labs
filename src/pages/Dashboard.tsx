@@ -20,6 +20,7 @@ interface Dataset {
   created_at?: string
   updated_at?: string
   column_analysis?: any
+  objective?: string
 }
 
 interface Profile {
@@ -607,6 +608,7 @@ interface AICleanState {
 function AICleanPage({ datasets, onDatasetsChange }: { datasets: Dataset[], onDatasetsChange: () => void }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const datasetId = new URLSearchParams(location.search).get('dataset')
   
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null)
@@ -672,7 +674,7 @@ function AICleanPage({ datasets, onDatasetsChange }: { datasets: Dataset[], onDa
       }
 
       // Load saved chat history from database
-      const { data: chatData, error: chatError } = await supabase
+      const { data: chatData } = await (supabase as any)
         .from('dataset_chats')
         .select('messages')
         .eq('dataset_id', dataset.id)
@@ -893,7 +895,7 @@ Provide a complete analysis and cleaning plan.`
       const { error: updateError } = await supabase
         .from('datasets')
         .update({
-          preview_rows: cleanedData.slice(0, 20),
+          preview_rows: JSON.parse(JSON.stringify(cleanedData.slice(0, 20))),
           status: 'cleaned',
           row_count: cleanedData.length,
           updated_at: new Date().toISOString()
@@ -914,17 +916,18 @@ Provide a complete analysis and cleaning plan.`
 
       onDatasetsChange()
       
-      const updatedMessages = [...messages, {
-        role: 'assistant',
+      const updatedMessages: { role: 'assistant' | 'user'; content: string }[] = [...messages, {
+        role: 'assistant' as const,
         content: `Cleaning complete! I've applied ${appliedActions.length} cleaning actions:\n${appliedActions.map(a => `- ${a.type}: ${a.columns?.join(', ') || 'all columns'} (${a.reason})`).join('\n')}\n\nYour dataset now has ${cleanedData.length} rows and is ready for machine learning! You can export it or proceed to model training.`
       }]
       setMessages(updatedMessages)
 
       // Save chat history to database using upsert
-      const { error: chatSaveError } = await supabase
+      const { error: chatSaveError } = await (supabase as any)
         .from('dataset_chats')
         .upsert({
           dataset_id: selectedDataset.id,
+          user_id: user!.id,
           messages: updatedMessages,
           updated_at: new Date().toISOString()
         }, { onConflict: 'dataset_id' })
@@ -1001,14 +1004,15 @@ Provide a complete analysis and cleaning plan.`
       if (!data?.success) throw new Error(data?.error || 'AI request failed')
 
       const reply = cleanResponse(data.result)
-      const updatedMessages = [...messages, { role: 'assistant', content: reply }]
+      const updatedMessages: { role: 'assistant' | 'user'; content: string }[] = [...messages, { role: 'assistant' as const, content: reply }]
       setMessages(updatedMessages)
       
       // Save chat history to dataset_chats table
-      const { error: chatSaveError } = await supabase
+      const { error: chatSaveError } = await (supabase as any)
         .from('dataset_chats')
         .upsert({
           dataset_id: selectedDataset.id,
+          user_id: user!.id,
           messages: updatedMessages,
           updated_at: new Date().toISOString()
         }, { onConflict: 'dataset_id' })
@@ -1058,7 +1062,7 @@ Provide a complete analysis and cleaning plan.`
         await supabase
           .from('datasets')
           .update({
-            preview_rows: datasetData.slice(0, 20),
+            preview_rows: JSON.parse(JSON.stringify(datasetData.slice(0, 20))),
             status: 'cleaned',
             row_count: datasetData.length,
             updated_at: new Date().toISOString()
@@ -1489,7 +1493,7 @@ Recommend the best ML algorithm.`
       addLog(`Training complete! Final accuracy: ${finalAccuracy.toFixed(2)}%`)
 
       // Save model to database
-      const { error: saveError } = await supabase
+      const { error: saveError } = await (supabase as any)
         .from('trained_models')
         .insert({
           dataset_id: dataset.id,
@@ -1962,7 +1966,7 @@ export default function Dashboard() {
           row_count: rawData.length,
           column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
           status: 'uploaded',
-          preview_rows: rawData.slice(0, 20),
+          preview_rows: JSON.parse(JSON.stringify(rawData.slice(0, 20))),
         }])
 
       if (insertError) {
