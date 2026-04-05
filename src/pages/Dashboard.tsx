@@ -1965,7 +1965,7 @@ export default function Dashboard() {
           row_count: rawData.length,
           column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
           status: 'uploaded',
-          preview_rows: rawData.slice(0, 20),
+          preview_rows: JSON.parse(JSON.stringify(rawData.slice(0, 20))),
         }])
 
       if (insertError) {
