@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import type { ColumnAnalysis, AIReasoning } from '@/types/dataset';
 
 export async function getAIReasonings(columns: ColumnAnalysis[]): Promise<AIReasoning[]> {
