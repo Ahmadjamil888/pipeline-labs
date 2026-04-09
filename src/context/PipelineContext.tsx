@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import type { ColumnAnalysis, DatasetState, PipelineStep, ChartConfig, DatasetVersion } from '@/types/dataset';

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePipeline } from '@/context/PipelineContext';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -119,8 +119,8 @@ export const AICleanPage: React.FC = () => {
             name: data.file_name,
             rowCount: data.row_count || 0,
             columnCount: data.column_count || 0,
-            size: formatFileSize(data.file_size || 0),
-            status: data.status || 'uploaded',
+            size: formatFileSize(0),
+            status: (data.status as 'processing' | 'ready' | 'uploaded') || 'uploaded',
             createdAt: data.created_at
           });
           setRetryCount(0); // Reset retry count on success

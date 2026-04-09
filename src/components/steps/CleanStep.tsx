@@ -15,7 +15,7 @@ const typeLabels: Record<ColumnType, string> = {
 };
 
 export function CleanStep() {
-  const { dataset, updateColumn, runCleaning } = usePipeline();
+  const { dataset, updateColumn, setStep } = usePipeline();
 
   return (
     <motion.div
@@ -28,7 +28,7 @@ export function CleanStep() {
           <h2 className="text-xl font-bold text-foreground">Column Configuration</h2>
           <p className="text-sm text-muted-foreground">Toggle columns, choose scaling, review types</p>
         </div>
-        <Button onClick={runCleaning}>Apply Cleaning</Button>
+        <Button onClick={() => setStep('transform')}>Apply Cleaning</Button>
       </div>
 
       <div className="grid gap-px bg-border">

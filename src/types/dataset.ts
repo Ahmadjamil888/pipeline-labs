@@ -62,4 +62,4 @@ export interface AIReasoning {
   type: 'drop' | 'keep' | 'transform' | 'warning' | 'suggestion';
 }
 
-export type PipelineStep = 'upload' | 'analyze' | 'explore' | 'export';
+export type PipelineStep = 'upload' | 'analyze' | 'clean' | 'transform' | 'explore' | 'export';
