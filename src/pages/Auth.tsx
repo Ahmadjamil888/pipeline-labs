@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/context/AuthContext";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -110,16 +111,12 @@ export default function Auth() {
     setError(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: { prompt: 'select_account' }
-        }
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin + "/auth/callback",
+        extraParams: { prompt: "select_account" }
       });
 
-      if (error) throw error;
-      // No need to navigate here, the browser will redirect to Google then back to /auth/callback
+      if (result.error) throw result.error;
     } catch (err: any) {
       console.error("Google auth error:", err);
       setError(err.message || "Google sign-in failed");
