@@ -4,8 +4,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { motion } from 'framer-motion';
 
 export function TransformStep() {
-  const { dataset, runTransform } = usePipeline();
-  const preview = dataset.cleanedData.slice(0, 10);
+  const { dataset, setStep } = usePipeline();
+  const preview = dataset.currentData.slice(0, 10);
   const columns = preview.length ? Object.keys(preview[0]) : [];
   const keptCols = dataset.columns.filter(c => c.keep);
 
@@ -19,10 +19,10 @@ export function TransformStep() {
         <div>
           <h2 className="text-xl font-bold text-foreground">Transform Preview</h2>
           <p className="text-sm text-muted-foreground">
-            {dataset.cleanedData.length} rows after cleaning • {keptCols.length} columns kept
+            {dataset.currentData.length} rows after cleaning • {keptCols.length} columns kept
           </p>
         </div>
-        <Button onClick={runTransform}>Run Transformation</Button>
+        <Button onClick={() => setStep('export')}>Run Transformation</Button>
       </div>
 
       <div className="space-y-3">

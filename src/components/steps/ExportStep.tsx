@@ -17,6 +17,7 @@ function downloadFile(content: string, filename: string, mime: string) {
 export function ExportStep() {
   const { dataset, fileName } = usePipeline();
   const baseName = fileName.replace(/\.[^.]+$/, '');
+  const data = dataset.currentData;
 
   return (
     <motion.div
@@ -27,13 +28,13 @@ export function ExportStep() {
       <div className="text-center">
         <h2 className="text-2xl font-bold text-foreground">Export Ready</h2>
         <p className="mt-2 text-muted-foreground">
-          {dataset.transformedData.length} rows × {dataset.transformedData[0] ? Object.keys(dataset.transformedData[0]).length : 0} features
+          {data.length} rows × {data[0] ? Object.keys(data[0]).length : 0} features
         </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <button
-          onClick={() => downloadFile(exportCSV(dataset.transformedData), `${baseName}_ml_ready.csv`, 'text/csv')}
+          onClick={() => downloadFile(exportCSV(data), `${baseName}_ml_ready.csv`, 'text/csv')}
           className="flex flex-col items-center gap-4 border border-border bg-background p-8 transition-all hover:bg-muted"
         >
           <FileSpreadsheet className="h-8 w-8 text-foreground" />
@@ -44,7 +45,7 @@ export function ExportStep() {
         </button>
 
         <button
-          onClick={() => downloadFile(exportJSON(dataset.llmReadyData), `${baseName}_llm_ready.json`, 'application/json')}
+          onClick={() => downloadFile(exportJSON(data), `${baseName}_llm_ready.json`, 'application/json')}
           className="flex flex-col items-center gap-4 border border-border bg-background p-8 transition-all hover:bg-muted"
         >
           <FileJson className="h-8 w-8 text-foreground" />
@@ -55,11 +56,11 @@ export function ExportStep() {
         </button>
       </div>
 
-      {dataset.llmReadyData[0] && (
+      {data[0] && (
         <div className="w-full max-w-2xl">
-          <h3 className="mb-2 text-sm font-medium text-muted-foreground">Sample LLM-Ready Output:</h3>
+          <h3 className="mb-2 text-sm font-medium text-muted-foreground">Sample Output:</h3>
           <pre className="overflow-auto border border-border bg-card p-4 font-mono text-xs text-foreground">
-            {JSON.stringify(dataset.llmReadyData[0], null, 2)}
+            {JSON.stringify(data[0], null, 2)}
           </pre>
         </div>
       )}
