@@ -615,7 +615,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Load profile
+  // Load profile - creates one if missing (handles race condition after OAuth signup)
   const loadProfile = async () => {
     if (!user) {
       console.log('[DEBUG] No user, skipping profile load')
@@ -626,6 +626,11 @@ export default function Dashboard() {
     const { data: { session } } = await supabase.auth.getSession()
     console.log('[DEBUG] Session:', session ? 'Present' : 'Missing', 'User ID:', user.id)
     
+    if (!session) {
+      console.error('[DEBUG] No valid session found')
+      return
+    }
+    
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -634,14 +639,45 @@ export default function Dashboard() {
         .single()
       
       if (error) {
-        console.error('[DEBUG] Profile load error:', error)
-        throw error
+        if (error.code === 'PGRST116') {
+          // Profile doesn't exist yet - create it (handles race condition with trigger)
+          console.log('[DEBUG] Profile not found, creating...')
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert({
+              id: user.id,
+              email: user.email,
+              full_name: user.user_metadata?.full_name || user.user_metadata?.name || '',
+              avatar_url: user.user_metadata?.avatar_url || '',
+            })
+            .select()
+            .single()
+          
+          if (createError) {
+            console.error('[DEBUG] Profile creation error:', createError)
+            throw createError
+          }
+          
+          console.log('[DEBUG] Profile created:', newProfile)
+          setProfile(newProfile)
+        } else {
+          console.error('[DEBUG] Profile load error:', error)
+          throw error
+        }
+      } else {
+        console.log('[DEBUG] Profile loaded:', data)
+        setProfile(data)
       }
-      
-      console.log('[DEBUG] Profile loaded:', data)
-      setProfile(data)
     } catch (err) {
       console.error('Error loading profile:', err)
+      // Don't throw - allow dashboard to load even if profile fails
+      setProfile({
+        id: user.id,
+        email: user.email,
+        full_name: user.user_metadata?.full_name || 'User',
+        avatar_url: null,
+        created_at: new Date().toISOString(),
+      })
     }
   }
 
@@ -670,7 +706,7 @@ export default function Dashboard() {
         id: d.id,
         name: d.file_name,
         file_name: d.file_name,
-          file_type: d.mime_type || d.file_name?.split('.').pop(),
+        file_type: d.mime_type || d.file_name?.split('.').pop(),
         row_count: d.row_count || 0,
         column_count: d.column_count || 0,
         status: d.status || 'uploaded',
@@ -760,8 +796,10 @@ export default function Dashboard() {
           row_count: rawData.length,
           column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
           status: 'uploaded',
-          preview_rows: JSON.parse(JSON.stringify(rawData.slice(0, 20))),
+          preview_rows: rawData.slice(0, 20),
         }])
+        .select()
+        .single()
 
       if (insertError) {
         console.error('[DEBUG] DB insert error:', insertError)
@@ -769,7 +807,7 @@ export default function Dashboard() {
         throw new Error(`Database insert failed: ${insertError.message}`)
       }
       
-      console.log('[DEBUG] Insert success:', insertData)
+      console.log('[DEBUG] Insert success, dataset ID:', insertData?.id)
 
       toast.success(`Dataset "${file.name}" uploaded successfully (${rawData.length} rows)`)
       await loadDatasets()

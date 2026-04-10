@@ -50,6 +50,7 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [step, setStep] = useState<PipelineStep>('upload');
   const [dataset, setDataset] = useState<DatasetState>(emptyState);
   const [fileName, setFileName] = useState('');
+  const [datasetId, setDatasetId] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
 
@@ -86,7 +87,7 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           row_count: rawData.length,
           column_count: rawData.length > 0 ? Object.keys(rawData[0]).length : 0,
           status: 'uploaded',
-          preview_rows: JSON.parse(JSON.stringify(rawData.slice(0, 20))),
+          preview_rows: rawData.slice(0, 20),
         })
         .select()
         .single();
@@ -94,6 +95,7 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (dbError) throw dbError;
 
       setFileName(file.name);
+      setDatasetId(datasetRecord?.id || '');
       setDataset({ ...emptyState, rawData, currentData: rawData });
       setStep('analyze');
       setMessages([{
@@ -126,20 +128,41 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [dataset.currentData]);
 
   const saveVersion = useCallback(async (summary: string) => {
-    // Note: In a real app, we'd save this to the DB. For MVP, we use local state + DB entry
+    if (!datasetId) {
+      toast.error('No dataset loaded');
+      return;
+    }
+    
+    // Save to database
+    const { data: versionRecord, error: versionError } = await supabase
+      .from('dataset_versions')
+      .insert({
+        dataset_id: datasetId,
+        version_data: dataset.currentData,
+        change_summary: summary,
+      })
+      .select()
+      .single();
+    
+    if (versionError) {
+      console.error('Failed to save version:', versionError);
+      toast.error('Failed to save version');
+      return;
+    }
+    
     const newVersion: DatasetVersion = {
-      id: Math.random().toString(36).substr(2, 9),
-      dataset_id: 'local', // Placeholder
+      id: versionRecord.id,
+      dataset_id: datasetId,
       version_data: JSON.parse(JSON.stringify(dataset.currentData)),
       change_summary: summary,
-      created_at: new Date().toISOString()
+      created_at: versionRecord.created_at,
     };
     
     setDataset(prev => ({
       ...prev,
       versions: [...prev.versions, newVersion]
     }));
-  }, [dataset.currentData]);
+  }, [dataset.currentData, datasetId]);
 
   const undoChange = useCallback(async () => {
     if (dataset.versions.length === 0) {
@@ -193,6 +216,7 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const rawData = isJSON ? parseJSON(text) : parseCSV(text);
       
       setFileName(ds.file_name);
+      setDatasetId(ds.id);
       setDataset({
         ...emptyState,
         rawData,
