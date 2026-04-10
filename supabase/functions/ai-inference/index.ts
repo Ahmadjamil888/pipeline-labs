@@ -122,6 +122,22 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // Handle GET requests - return status
+  if (req.method === 'GET') {
+    return new Response(
+      JSON.stringify({ success: true, status: 'AI Inference API is running', version: '1.0' }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  // Only accept POST
+  if (req.method !== 'POST') {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Method not allowed' }),
+      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   try {
     // Check auth (permissive - allows anonymous)
     const isAuth = await verifyAuth(req);
@@ -132,7 +148,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { prompt, systemPrompt, stream = false } = await req.json();
+    // Parse JSON body with error handling
+    let body;
+    try {
+      body = await req.json();
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Invalid JSON body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { prompt, systemPrompt, stream = false } = body;
 
     if (!prompt) {
       return new Response(
