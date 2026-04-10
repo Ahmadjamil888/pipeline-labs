@@ -628,16 +628,24 @@ export default function Dashboard() {
       return
     }
     
-    // Check session
-    const { data: { session } } = await supabase.auth.getSession()
-    console.log('[DEBUG] Session:', session ? 'Present' : 'Missing', 'User ID:', user.id)
+    // Check session with detailed logging
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    console.log('[DEBUG] Session check:', { 
+      hasSession: !!session, 
+      userId: user.id,
+      sessionUserId: session?.user?.id,
+      accessToken: session?.access_token ? 'Present' : 'Missing',
+      expiresAt: session?.expires_at,
+      sessionError
+    })
     
     if (!session) {
-      console.error('[DEBUG] No valid session found')
+      console.error('[DEBUG] No valid session found - user:', user)
       return
     }
     
     try {
+      console.log('[DEBUG] Querying profiles with auth.uid():', user.id)
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
