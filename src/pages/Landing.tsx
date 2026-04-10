@@ -117,11 +117,30 @@ const GLOBAL_CSS = `
     padding: 20px 24px;
     font-family: 'Source Code Pro', 'Fira Code', 'Consolas', monospace;
     font-size: 13px;
-    line-height: 1.75;
-    letter-spacing: 0.01em;
-    pointer-events: none;
-    white-space: pre;
-    z-index: 1;
+  }
+
+  /* Mobile Responsive Styles */
+  @media (max-width: 768px) {
+    .mobile-hidden { display: none !important; }
+    .mobile-stack { flex-direction: column !important; }
+    .mobile-full { width: 100% !important; }
+    .mobile-pad { padding: 16px !important; }
+    .mobile-hero-pad { padding: 80px 20px 40px !important; }
+    .mobile-text-sm { font-size: 12px !important; }
+    .mobile-text-md { font-size: 28px !important; line-height: 1.2 !important; }
+    .mobile-gap-sm { gap: 8px !important; }
+    .mobile-center { text-align: center !important; }
+  }
+
+  @media (max-width: 768px) {
+    nav { padding: 0 16px !important; }
+    .nav-links { display: none !important; }
+    .mobile-menu-btn { display: flex !important; }
+  }
+
+  @media (min-width: 769px) {
+    .mobile-menu-btn { display: none !important; }
+    .mobile-nav-menu { display: none !important; }
   }
 `;
 
@@ -243,7 +262,6 @@ function Logo({ theme, height = 28, fallbackId = "nav-logo-fb" }: { theme: Theme
       }}
     />
   );
-}
 
 /* ─────────────────────────────────────────────
    SLEEK NAVBAR (matches image design)
@@ -252,10 +270,10 @@ function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) 
   const { user } = useAuth();
   const isSignedIn = !!user;
   const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
-      // Switch to blurred bg when scrolled past hero (100vh area)
       setScrolled(window.scrollY > window.innerHeight - 64);
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -272,160 +290,226 @@ function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) 
   ];
 
   return (
-    <nav style={{
-      position: "fixed",
-      top: 0, left: 0, right: 0,
-      height: 64,
-      background: scrolled ? "var(--nav-bg)" : "transparent",
-      backdropFilter: scrolled ? "blur(12px)" : "none",
-      WebkitBackdropFilter: scrolled ? "blur(12px)" : "none",
-      borderBottom: scrolled ? "1px solid var(--border)" : "1px solid transparent",
-      zIndex: 100,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      padding: "0 24px",
-      transition: "background 0.3s ease, backdrop-filter 0.3s ease, border-bottom 0.3s ease",
-    }}>
-      {/* Logo */}
-      <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-        <Logo theme={theme} height={28} />
-      </Link>
-
-      {/* Center Nav Items */}
-      <div style={{
+    <>
+      <nav style={{
+        position: "fixed",
+        top: 0, left: 0, right: 0,
+        height: 64,
+        background: scrolled ? "var(--nav-bg)" : "transparent",
+        backdropFilter: scrolled ? "blur(12px)" : "none",
+        WebkitBackdropFilter: scrolled ? "blur(12px)" : "none",
+        borderBottom: scrolled ? "1px solid var(--border)" : "1px solid transparent",
+        zIndex: 100,
         display: "flex",
         alignItems: "center",
-        gap: 32,
-        position: "absolute",
-        left: "50%",
-        transform: "translateX(-50%)",
+        justifyContent: "space-between",
+        padding: "0 24px",
+        transition: "background 0.3s ease, backdrop-filter 0.3s ease, border-bottom 0.3s ease",
       }}>
-        {navItems.map((item) => (
+        {/* Logo */}
+        <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
+          <Logo theme={theme} height={28} />
+        </Link>
+
+        {/* Center Nav Items - Desktop */}
+        <div className="nav-links" style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 32,
+          position: "absolute",
+          left: "50%",
+          transform: "translateX(-50%)",
+        }}>
+          {navItems.map((item) => (
+            <a
+              key={item.label}
+              href={item.href}
+              target={item.external ? "_blank" : undefined}
+              rel={item.external ? "noopener noreferrer" : undefined}
+              style={{
+                fontSize: 14,
+                fontWeight: 300,
+                color: "var(--text2)",
+                textDecoration: "none",
+                transition: "color 0.15s",
+                fontFamily: T.font,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text2)")}
+            >
+              {item.label}
+            </a>
+          ))}
+        </div>
+
+        {/* Right Side Actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* Mobile Menu Button */}
+          <button
+            className="mobile-menu-btn"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              border: "1px solid var(--border2)",
+              background: "transparent",
+              cursor: "pointer",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text2)",
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {mobileMenuOpen ? (
+                <path d="M18 6L6 18M6 6l12 12" />
+              ) : (
+                <path d="M3 12h18M3 6h18M3 18h18" />
+              )}
+            </svg>
+          </button>
+
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              border: "1px solid var(--border2)",
+              background: "transparent",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text2)",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--border2)";
+              e.currentTarget.style.color = "var(--text)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--border)";
+              e.currentTarget.style.color = "var(--text2)";
+            }}
+          >
+            {theme === "dark" ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+            )}
+          </button>
+
+          {/* Contact Sales Button */}
           <a
-            key={item.label}
-            href={item.href}
-            target={item.external ? "_blank" : undefined}
-            rel={item.external ? "noopener noreferrer" : undefined}
+            href="mailto:sales@pipelinelabs.ai"
             style={{
               fontSize: 14,
-              fontWeight: 300,
-              color: "var(--text2)",
+              fontWeight: 500,
+              color: "var(--text)",
               textDecoration: "none",
-              transition: "color 0.15s",
-              fontFamily: T.font,
+              padding: "11px 24px",
+              borderRadius: T.pill,
+              border: "1px solid var(--border2)",
+              fontFamily: T.buttonFont,
+              transition: "all 0.15s",
+              background: "transparent",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text2)")}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--bg3)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
           >
-            {item.label}
+            Contact sales
           </a>
-        ))}
-      </div>
 
-      {/* Right Side Actions */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {/* Theme Toggle */}
-        <button
-          onClick={toggleTheme}
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: "50%",
-            border: "1px solid var(--border2)",
-            background: "transparent",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--text2)",
-            transition: "all 0.15s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "var(--border2)";
-            e.currentTarget.style.color = "var(--text)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "var(--border)";
-            e.currentTarget.style.color = "var(--text2)";
-          }}
-        >
-          {theme === "dark" ? (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="5" />
-              <line x1="12" y1="1" x2="12" y2="3" />
-              <line x1="12" y1="21" x2="12" y2="23" />
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-              <line x1="1" y1="12" x2="3" y2="12" />
-              <line x1="21" y1="12" x2="23" y2="12" />
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-            </svg>
-          )}
-        </button>
+          {/* Dashboard Button */}
+          <Link
+            to={isSignedIn ? "/dashboard" : "/auth"}
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--bg)",
+              background: "var(--text)",
+              textDecoration: "none",
+              padding: "11px 24px",
+              borderRadius: T.pill,
+              fontFamily: T.buttonFont,
+              transition: "opacity 0.15s",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              letterSpacing: "-0.01em",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = "0.9";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = "1";
+            }}
+          >
+            Dashboard
+          </Link>
+        </div>
+      </nav>
 
-        {/* Contact Sales Button */}
-        <a
-          href="mailto:sales@pipelinelabs.ai"
-          style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: "var(--text)",
-            textDecoration: "none",
-            padding: "11px 24px",
-            borderRadius: T.pill,
-            border: "1px solid var(--border2)",
-            fontFamily: T.buttonFont,
-            transition: "all 0.15s",
-            background: "transparent",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--bg3)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          Contact sales
-        </a>
-
-        {/* Dashboard Button */}
-        <Link
-          to={isSignedIn ? "/dashboard" : "/auth"}
-          style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: "var(--bg)",
-            background: "var(--text)",
-            textDecoration: "none",
-            padding: "11px 24px",
-            borderRadius: T.pill,
-            fontFamily: T.buttonFont,
-            transition: "opacity 0.15s",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            letterSpacing: "-0.01em",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = "0.9";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = "1";
-          }}
-        >
-          Dashboard
-        </Link>
-      </div>
-    </nav>
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div className="mobile-nav-menu" style={{
+          position: "fixed",
+          top: 64,
+          left: 0,
+          right: 0,
+          background: "var(--bg)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          borderBottom: "1px solid var(--border)",
+          zIndex: 99,
+          padding: "20px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}>
+          {navItems.map((item) => (
+            <a
+              key={item.label}
+              href={item.href}
+              target={item.external ? "_blank" : undefined}
+              rel={item.external ? "noopener noreferrer" : undefined}
+              onClick={() => setMobileMenuOpen(false)}
+              style={{
+                fontSize: 16,
+                fontWeight: 400,
+                color: "var(--text)",
+                textDecoration: "none",
+                padding: "12px 0",
+                fontFamily: T.font,
+              }}
+            >
+              {item.label}
+            </a>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
