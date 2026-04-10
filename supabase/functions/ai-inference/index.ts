@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "npm:@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,17 +36,27 @@ async function callGemini(prompt: string, systemPrompt: string, stream = false) 
       // Streaming response
       const response = await ai.models.generateContentStream({
         model: "gemini-1.5-flash",
-        contents: fullPrompt,
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: fullPrompt }],
+          },
+        ],
       });
       return { stream: response, provider: "gemini-1.5-flash" };
     } else {
       // Non-streaming response
       const response = await ai.models.generateContent({
         model: "gemini-1.5-flash",
-        contents: fullPrompt,
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: fullPrompt }],
+          },
+        ],
       });
 
-      const text = response.text;
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
       console.log("[AI] Gemini raw text:", text?.substring(0, 200) + "...");
 
       if (!text) {
@@ -184,7 +194,7 @@ Deno.serve(async (req) => {
             async start(controller) {
               try {
                 for await (const chunk of geminiStream) {
-                  const text = chunk.text;
+                  const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
                   if (text) {
                     controller.enqueue(encoder.encode(text));
                   }
