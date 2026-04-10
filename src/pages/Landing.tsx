@@ -262,6 +262,7 @@ function Logo({ theme, height = 28, fallbackId = "nav-logo-fb" }: { theme: Theme
       }}
     />
   );
+}
 
 /* ─────────────────────────────────────────────
    SLEEK NAVBAR (matches image design)
