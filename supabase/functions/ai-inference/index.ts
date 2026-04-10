@@ -1,3 +1,5 @@
+import { GoogleGenAI } from "npm:@google/genai";
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
@@ -18,61 +20,45 @@ STRICT OUTPUT RULES:
 4. For DATA TYPE detection, mention: "DATA_TYPE: [tabular|nominal|json]"
 5. Keep the main message conversational and explain the 'why'.`;
 
-// Primary: Gemini 2.5 Flash via Google GenAI API
-async function callGemini(prompt: string, systemPrompt: string, apiKey: string) {
-  console.log('[AI] Trying Gemini 2.5 Flash...');
-  
-  // Using the new Gemini API format (similar to GoogleGenAI SDK)
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-09:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: systemPrompt + "\n\n" + prompt }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 8192,
-          topP: 0.95,
-          topK: 40,
-        },
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
-        ]
-      }),
+// Initialize Gemini AI
+const ai = new GoogleGenAI({
+  apiKey: Deno.env.get("GEMINI_API_KEY"),
+});
+
+// Primary: Gemini 1.5 Flash via SDK
+async function callGemini(prompt: string, systemPrompt: string, stream = false) {
+  console.log('[AI] Using Gemini SDK...');
+
+  try {
+    const fullPrompt = `${systemPrompt}\n\n${prompt}`;
+
+    if (stream) {
+      // Streaming response
+      const response = await ai.models.generateContentStream({
+        model: "gemini-1.5-flash",
+        contents: fullPrompt,
+      });
+      return { stream: response, provider: "gemini-1.5-flash" };
+    } else {
+      // Non-streaming response
+      const response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: fullPrompt,
+      });
+
+      const text = response.text;
+      console.log("[AI] Gemini raw text:", text?.substring(0, 200) + "...");
+
+      if (!text) {
+        throw new Error("Empty Gemini response");
+      }
+
+      return { content: text, provider: "gemini-1.5-flash" };
     }
-  );
-
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error('[AI] Gemini API error:', response.status, errText);
-    throw new Error(`Gemini API error: ${response.status}`);
+  } catch (err) {
+    console.error("[AI] Gemini SDK error:", err);
+    throw err;
   }
-
-  const data = await response.json();
-  
-  // Check for blocked content
-  if (data.promptFeedback?.blockReason) {
-    throw new Error(`Content blocked: ${data.promptFeedback.blockReason}`);
-  }
-  
-  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  
-  if (!content) {
-    throw new Error('Empty response from Gemini');
-  }
-  
-  return { content, provider: 'gemini-2.5-flash' };
 }
 
 // Fallback: OpenRouter with free model
@@ -84,25 +70,31 @@ async function callOpenRouterFree(prompt: string, systemPrompt: string, apiKey: 
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://pipelinelabs-ashen.vercel.app',
-      'X-Title': 'Pipeline Labs',
+      'HTTP-Referer': 'https://pipeline-labs.vercel.app',
+      'X-Title': 'Pipeline Labs AI',
     },
     body: JSON.stringify({
-      model: 'google/gemma-3-4b-it:free',
+      model: 'mistralai/mistral-7b-instruct:free',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt },
+        { role: 'user', content: prompt }
       ],
+      temperature: 0.7,
+      max_tokens: 4096,
     }),
   });
 
   if (!response.ok) {
     const errText = await response.text();
+    console.error('[AI] OpenRouter error:', response.status, errText);
     throw new Error(`OpenRouter error: ${response.status} - ${errText}`);
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
+  const content = 
+    data.choices?.[0]?.message?.content || 
+    data.choices?.[0]?.text || 
+    '';
   
   return { content, provider: 'openrouter-free' };
 }
@@ -139,6 +131,10 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Debug logging
+    console.log("Gemini key exists:", !!Deno.env.get("GEMINI_API_KEY"));
+    console.log("OpenRouter key exists:", !!Deno.env.get("OPENROUTER_API_KEY"));
+
     // Check auth (permissive - allows anonymous)
     const isAuth = await verifyAuth(req);
     if (!isAuth) {
@@ -168,22 +164,55 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Note: Gemini doesn't support streaming in the same way, so we'll handle non-streaming
     const finalSystemPrompt = systemPrompt || SYSTEM_PROMPT;
     
     let result;
     let usedProvider = '';
 
-    // Try Gemini 2.5 Flash first
+    // Try Gemini 1.5 Flash first
     const geminiKey = Deno.env.get('GEMINI_API_KEY');
     if (geminiKey) {
       try {
-        const geminiResult = await callGemini(prompt, finalSystemPrompt, geminiKey);
+        const geminiResult = await callGemini(prompt, finalSystemPrompt, stream);
+        
+        // Handle streaming response
+        if (stream && geminiResult.stream) {
+          const encoder = new TextEncoder();
+          const geminiStream = geminiResult.stream;
+
+          const readableStream = new ReadableStream({
+            async start(controller) {
+              try {
+                for await (const chunk of geminiStream) {
+                  const text = chunk.text;
+                  if (text) {
+                    controller.enqueue(encoder.encode(text));
+                  }
+                }
+                controller.close();
+              } catch (err) {
+                console.error("[AI] Stream error:", err);
+                controller.error(err);
+              }
+            },
+          });
+
+          return new Response(readableStream, {
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "text/plain",
+              "Transfer-Encoding": "chunked",
+            },
+          });
+        }
+        
+        // Non-streaming response
         result = geminiResult.content;
         usedProvider = geminiResult.provider;
         console.log(`[AI] Successfully used ${usedProvider}`);
       } catch (geminiError) {
-        console.error('[AI] Gemini failed:', geminiError.message);
+        const errorMsg = geminiError instanceof Error ? geminiError.message : 'Gemini failed';
+        console.error('[AI] Gemini failed:', errorMsg);
         
         // Fallback to OpenRouter
         const openrouterKey = Deno.env.get('OPENROUTER_API_KEY');
