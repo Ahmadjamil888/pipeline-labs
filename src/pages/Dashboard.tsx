@@ -58,22 +58,23 @@ function Sidebar({
   isMobileOpen, 
   setIsMobileOpen,
   onSignOut,
-  onAvatarChange,
   isHidden
 }: { 
   profile: Profile | null
   isMobileOpen: boolean
   setIsMobileOpen: (open: boolean) => void
   onSignOut: () => void
-  onAvatarChange: (file: File) => Promise<void>
   isHidden?: boolean
 }) {
   const location = useLocation()
   const { user } = useAuth()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  
+  // Get avatar URL from OAuth metadata or profile
+  const avatarUrl = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || ''
+  const fullName = profile?.full_name || user?.user_metadata?.full_name || user?.user_metadata?.name || 'User'
+  const email = profile?.email || user?.email || ''
   
   // Close menu when clicking outside
   useEffect(() => {
@@ -97,22 +98,6 @@ function Sidebar({
 
   const handleAvatarClick = () => {
     setShowProfileMenu(!showProfileMenu)
-  }
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    
-    setIsUploadingAvatar(true)
-    try {
-      await onAvatarChange(file)
-      toast.success('Avatar updated successfully')
-    } catch (error) {
-      toast.error('Failed to update avatar')
-    } finally {
-      setIsUploadingAvatar(false)
-      setShowProfileMenu(false)
-    }
   }
 
   return (
@@ -173,10 +158,10 @@ function Sidebar({
                 className="w-full flex items-center gap-3 p-2 -mx-2 rounded-lg hover:bg-neutral-800 transition-colors text-left"
               >
                 <div className="relative">
-                  {profile.avatar_url ? (
+                  {avatarUrl ? (
                     <img 
-                      src={profile.avatar_url} 
-                      alt={profile.full_name || 'Profile'}
+                      src={avatarUrl} 
+                      alt={fullName}
                       className="w-10 h-10 rounded-full object-cover border border-neutral-700"
                     />
                   ) : (
@@ -184,18 +169,13 @@ function Sidebar({
                       <span className="material-symbols-outlined text-neutral-400">person</span>
                     </div>
                   )}
-                  {isUploadingAvatar && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-neutral-950/80 rounded-full">
-                      <span className="material-symbols-outlined text-sm animate-spin">refresh</span>
-                    </div>
-                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-white truncate">
-                    {profile.full_name || 'User'}
+                    {fullName}
                   </p>
                   <p className="text-xs text-neutral-500 truncate">
-                    {profile.email || user?.email}
+                    {email}
                   </p>
                 </div>
                 <span className="material-symbols-outlined text-neutral-500 text-sm">
@@ -203,24 +183,9 @@ function Sidebar({
                 </span>
               </button>
 
-              {/* Profile Dropdown Menu */}
+              {/* Profile Dropdown Menu - Sign Out Only */}
               {showProfileMenu && (
                 <div className="mt-2 py-2 bg-neutral-800 rounded-lg border border-neutral-700 shadow-lg">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    accept="image/*"
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingAvatar}
-                    className="w-full flex items-center gap-3 px-4 py-2 text-sm text-neutral-300 hover:text-white hover:bg-neutral-700 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-lg">image</span>
-                    Change Avatar
-                  </button>
                   <button
                     onClick={() => {
                       onSignOut()
@@ -245,12 +210,32 @@ function Sidebar({
 function MobileHeader({ 
   onMenuClick, 
   profile,
+  onSignOut,
   notificationCount = 0
 }: { 
   onMenuClick: () => void
   profile: Profile | null
+  onSignOut: () => void
   notificationCount?: number
 }) {
+  const { user } = useAuth()
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  
+  // Get avatar from OAuth or profile
+  const avatarUrl = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || ''
+  
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+  
   return (
     <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 h-16 bg-neutral-950/95 backdrop-blur-xl border-b border-neutral-800">
       <button 
@@ -264,22 +249,43 @@ function MobileHeader({
         <span className="text-lg font-bold text-white">Pipeline Labs</span>
       </Link>
       
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 relative" ref={menuRef}>
         <button className="relative p-2 text-white hover:bg-neutral-800 rounded-lg transition-colors">
           <span className="material-symbols-outlined">notifications</span>
           {notificationCount > 0 && (
             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
           )}
         </button>
-        {profile?.avatar_url ? (
-          <img 
-            src={profile.avatar_url} 
-            alt="Profile" 
-            className="w-8 h-8 rounded-full object-cover border border-neutral-700"
-          />
-        ) : (
-          <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center">
-            <span className="material-symbols-outlined text-sm text-neutral-400">person</span>
+        <button 
+          onClick={() => setShowMenu(!showMenu)}
+          className="relative"
+        >
+          {avatarUrl ? (
+            <img 
+              src={avatarUrl} 
+              alt="Profile" 
+              className="w-8 h-8 rounded-full object-cover border border-neutral-700"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center">
+              <span className="material-symbols-outlined text-sm text-neutral-400">person</span>
+            </div>
+          )}
+        </button>
+        
+        {/* Mobile Profile Dropdown */}
+        {showMenu && (
+          <div className="absolute right-0 top-full mt-2 w-48 py-2 bg-neutral-800 rounded-lg border border-neutral-700 shadow-lg z-50">
+            <button
+              onClick={() => {
+                onSignOut()
+                setShowMenu(false)
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-neutral-300 hover:text-red-400 hover:bg-neutral-700 transition-colors"
+            >
+              <span className="material-symbols-outlined text-lg">logout</span>
+              Sign Out
+            </button>
           </div>
         )}
       </div>
@@ -639,7 +645,13 @@ export default function Dashboard() {
         .single()
       
       if (error) {
-        if (error.code === 'PGRST116') {
+        console.error('[DEBUG] Profile error details:', { 
+          code: error.code, 
+          message: error.message, 
+          details: error.details,
+          hint: error.hint 
+        })
+        if (error.code === 'PGRST116' || error.code === '404') {
           // Profile doesn't exist yet - create it (handles race condition with trigger)
           console.log('[DEBUG] Profile not found, creating...')
           const { data: newProfile, error: createError } = await supabase
@@ -696,7 +708,12 @@ export default function Dashboard() {
         .order('created_at', { ascending: false })
       
       if (error) {
-        console.error('[DEBUG] Datasets load error:', error)
+        console.error('[DEBUG] Datasets error details:', { 
+          code: error.code, 
+          message: error.message, 
+          details: error.details,
+          hint: error.hint 
+        })
         throw error
       }
       
@@ -836,36 +853,6 @@ export default function Dashboard() {
     }
   }
 
-  // Handle avatar upload from sidebar
-  const handleAvatarChange = async (file: File) => {
-    if (!user) throw new Error('No user')
-    
-    const fileExt = file.name.split('.').pop()
-    const filePath = `${user.id}/avatar.${fileExt}`
-    
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(filePath, file, { upsert: true })
-    
-    if (uploadError) throw uploadError
-    
-    const { data: { publicUrl } } = supabase.storage
-      .from('avatars')
-      .getPublicUrl(filePath)
-    
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .upsert({ 
-        id: user.id,
-        avatar_url: publicUrl,
-        updated_at: new Date().toISOString()
-      })
-    
-    if (updateError) throw updateError
-    
-    await loadProfile()
-  }
-
   if (!user || isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen" style={{ background: '#131313' }}>
@@ -893,6 +880,7 @@ export default function Dashboard() {
       <MobileHeader 
         onMenuClick={() => setIsMobileMenuOpen(true)} 
         profile={profile}
+        onSignOut={handleSignOut}
       />
 
       <div className="flex">
@@ -902,7 +890,6 @@ export default function Dashboard() {
           isMobileOpen={isMobileMenuOpen}
           setIsMobileOpen={setIsMobileMenuOpen}
           onSignOut={handleSignOut}
-          onAvatarChange={handleAvatarChange}
           isHidden={location.pathname === '/dashboard/clean-ai'}
         />
 
