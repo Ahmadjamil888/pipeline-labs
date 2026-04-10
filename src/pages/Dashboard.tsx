@@ -864,7 +864,17 @@ export default function Dashboard() {
   if (!user || isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen" style={{ background: '#131313' }}>
-        <span className="material-symbols-outlined animate-spin text-white" style={{ fontSize: '32px' }}>refresh</span>
+        <div className="banter-loader">
+          <div className="banter-loader__box"></div>
+          <div className="banter-loader__box"></div>
+          <div className="banter-loader__box"></div>
+          <div className="banter-loader__box"></div>
+          <div className="banter-loader__box"></div>
+          <div className="banter-loader__box"></div>
+          <div className="banter-loader__box"></div>
+          <div className="banter-loader__box"></div>
+          <div className="banter-loader__box"></div>
+        </div>
       </div>
     )
   }

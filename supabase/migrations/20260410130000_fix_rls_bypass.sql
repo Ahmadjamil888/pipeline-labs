@@ -1,6 +1,26 @@
 -- =====================================================
--- COMPREHENSIVE RLS FIX - Bypass and Re-enable
+-- COMPREHENSIVE RLS FIX - Grant + Policies + RLS
 -- =====================================================
+-- ROOT CAUSE: Missing table-level GRANT permissions
+-- Supabase security has 2 layers:
+--   Layer 1: Table Permissions (GRANT) - WAS MISSING!
+--   Layer 2: RLS Policies
+-- Without Layer 1, Layer 2 never gets evaluated → 42501 errors
+-- =====================================================
+
+-- =====================================================
+-- STEP 0: GRANT TABLE PERMISSIONS (CRITICAL!)
+-- =====================================================
+
+-- Grant all permissions on tables to authenticated role
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.datasets TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.dataset_chats TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.trained_models TO authenticated;
+GRANT SELECT, INSERT ON public.dataset_versions TO authenticated;
+
+-- Grant sequence usage for ID generation
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 
 -- Step 1: Disable RLS temporarily to diagnose
 ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
