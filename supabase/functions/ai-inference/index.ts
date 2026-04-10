@@ -107,12 +107,31 @@ async function callOpenRouterFree(prompt: string, systemPrompt: string, apiKey: 
   return { content, provider: 'openrouter-free' };
 }
 
+// Verify Supabase JWT (optional - allow anonymous)
+async function verifyAuth(req: Request): Promise<boolean> {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader) return true; // Allow anonymous
+  
+  // If authorization header exists, we could verify it
+  // For now, accept all requests
+  return true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
+    // Check auth (permissive - allows anonymous)
+    const isAuth = await verifyAuth(req);
+    if (!isAuth) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { prompt, systemPrompt, stream = false } = await req.json();
 
     if (!prompt) {
