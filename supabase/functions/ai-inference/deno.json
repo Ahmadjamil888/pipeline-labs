@@ -3,6 +3,6 @@
     "lib": ["deno.ns"]
   },
   "imports": {
-    "@genai/gemini": "npm:@genai/gemini@^0.8.0"
+    "@google/generative-ai": "npm:@google/generative-ai@^0.21.0"
   }
 }
