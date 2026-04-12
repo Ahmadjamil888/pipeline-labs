@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { Trash2 } from 'lucide-react'
 import { AICleanPage as AIDataScientist } from '@/components/AICleanPage'
 import { usePipeline } from '@/context/PipelineContext'
 import { useNavigate, useLocation, Routes, Route, Link } from 'react-router-dom'
@@ -6,6 +7,9 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { toast } from 'sonner'
 import { parseCSV, parseJSON, analyzeColumns, cleanData, transformData } from '@/lib/dataProcessing'
+import CloudConnect from './CloudConnect'
+import TrainingPlanPage from './TrainingPlan'
+import MonitorPage from './Monitor'
 
 const AIDataScientistWrapper = () => {
   const { loadDatasetRecord } = usePipeline();
@@ -50,6 +54,9 @@ const navItems = [
   { id: 'overview', label: 'Overview', icon: 'dashboard', path: '/dashboard' },
   { id: 'datasets', label: 'Datasets', icon: 'database', path: '/dashboard/datasets' },
   { id: 'explore-ai', label: 'AI Data Scientist', icon: 'auto_fix', path: '/dashboard/clean-ai' },
+  { id: 'train', label: 'Train Model', icon: 'model_training', path: '/dashboard/train' },
+  { id: 'cloud', label: 'Cloud Connect', icon: 'cloud', path: '/dashboard/cloud' },
+  { id: 'monitor', label: 'Monitor', icon: 'monitoring', path: '/dashboard/jobs' },
 ]
 
 // Sidebar Component
@@ -417,6 +424,15 @@ function OverviewPage({
             <div className="h-full bg-[#d5c5a6]" style={{ width: `${Math.min(100, datasets.length * 5)}%` }} />
           </div>
         </div>
+        
+        <Link to="/dashboard/train" className="bg-[#1c1b1b] rounded-xl p-6 border border-white/5 hover:border-[#d5c5a6]/20 transition-colors cursor-pointer">
+          <div className="flex justify-between items-start mb-4">
+            <span className="text-xs text-neutral-500 uppercase tracking-wider">Train Models</span>
+            <span className="material-symbols-outlined text-[#d5c5a6]">model_training</span>
+          </div>
+          <h4 className="text-3xl font-light text-[#d5c5a6]">→</h4>
+          <p className="text-xs text-neutral-500 mt-1">AI-powered training</p>
+        </Link>
       </div>
 
       {/* Recent Datasets */}
@@ -558,21 +574,25 @@ function DatasetsPage({
       {/* Datasets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredDatasets.map((dataset) => (
-          <div key={dataset.id} className="bg-[#1c1b1b] rounded-xl p-6 border border-white/5 hover:border-white/10 transition-colors">
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-12 h-12 rounded-lg bg-neutral-900 border border-white/10 flex items-center justify-center">
-                <span className="material-symbols-outlined text-2xl text-white">table_chart</span>
+          <Link
+            key={dataset.id}
+            to={`/dashboard/clean-ai?dataset=${dataset.id}`}
+            className="bg-[#1c1b1b] rounded-xl p-5 border border-white/5 hover:border-[#d5c5a6]/30 transition-all group"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-12 h-12 rounded-xl bg-neutral-900 border border-white/10 flex items-center justify-center">
+                <span className="material-symbols-outlined text-white">table_chart</span>
               </div>
-              <button 
-                onClick={() => onDeleteDataset(dataset.id)}
-                className="p-1 text-neutral-500 hover:text-red-400 transition-colors"
+              <button
+                onClick={(e) => { e.stopPropagation(); onDeleteDataset(dataset.id); }}
+                className="p-2 text-neutral-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
               >
-                <span className="material-symbols-outlined">delete</span>
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
-            
-            <h4 className="font-medium text-white mb-1 truncate">{dataset.file_name}</h4>
-            <p className="text-xs text-neutral-500 mb-4">
+
+            <h3 className="font-medium text-white mb-1 truncate">{dataset.name}</h3>
+            <p className="text-xs text-neutral-500 mb-3">
               {formatNumber(dataset.row_count || 0)} rows • {dataset.column_count || 0} columns
             </p>
             
@@ -588,13 +608,25 @@ function DatasetsPage({
               </span>
               <Link 
                 to={`/dashboard/clean-ai?dataset=${dataset.id}`}
+                onClick={(e) => e.stopPropagation()}
                 className="text-[#d5c5a6] text-sm hover:underline flex items-center gap-1"
               >
                 Clean with AI
                 <span className="material-symbols-outlined text-sm">arrow_forward</span>
               </Link>
             </div>
-          </div>
+            {/* Train Model Button */}
+            <div className="mt-3 pt-3 border-t border-white/5">
+              <Link
+                to={`/dashboard/train?dataset=${dataset.id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full py-2 rounded-lg bg-white/5 hover:bg-[#d5c5a6]/10 border border-white/10 hover:border-[#d5c5a6]/30 text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">model_training</span>
+                Train Model
+              </Link>
+            </div>
+          </Link>
         ))}
       </div>
 
@@ -937,6 +969,9 @@ export default function Dashboard() {
               } 
             />
             <Route path="/clean-ai" element={<AIDataScientistWrapper />} />
+            <Route path="/train" element={<TrainingPlanPage />} />
+            <Route path="/cloud" element={<CloudConnect />} />
+            <Route path="/jobs" element={<MonitorPage />} />
           </Routes>
         </main>
       </div>

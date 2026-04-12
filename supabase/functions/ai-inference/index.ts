@@ -1,8 +1,17 @@
-import { GoogleGenAI } from "@google/genai";
+// deno-lint-ignore-file no-explicit-any
+import { GoogleGenAI } from "npm:@genai/gemini";
+
+// Global Deno namespace for IDE compatibility
+// Runtime: Deno is available in Supabase Edge Functions
+ declare const Deno: {
+  env: {
+    get(name: string): string | undefined;
+  };
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "*",
+  "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -22,7 +31,7 @@ Rules:
 `;
 
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY!,
+  apiKey: Deno.env.get("GEMINI_API_KEY") || "",
 });
 
 // 🔥 Optimized Gemini streaming call
