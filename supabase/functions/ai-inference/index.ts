@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import { GoogleGenerativeAI } from "@google/genai";
+import { GoogleGenAI } from "@genai/gemini";
 
 // Global Deno namespace for IDE compatibility
 // Runtime: Deno is available in Supabase Edge Functions
@@ -30,14 +30,19 @@ Rules:
 - If data is present, always infer structure first
 `;
 
-const ai = new GoogleGenerativeAI({
+const ai = new GoogleGenAI({
   apiKey: Deno.env.get("GEMINI_API_KEY") || "",
 });
 
 // 🔥 Optimized Gemini streaming call
 async function streamGemini(prompt: string, systemPrompt: string) {
-  const model = ai.getGenerativeModel({ model: "gemini-2.0-flash" });
-  const stream = await model.generateContentStream({
+  const stream = await ai.models.generateContentStream({
+    model: "gemini-2.5-flash",
+    config: {
+      temperature: 0.3,
+      topP: 0.9,
+      maxOutputTokens: 4096,
+    },
     contents: [
       {
         role: "user",
@@ -48,11 +53,6 @@ async function streamGemini(prompt: string, systemPrompt: string) {
         ],
       },
     ],
-    generationConfig: {
-      temperature: 0.3,
-      topP: 0.9,
-      maxOutputTokens: 4096,
-    },
   });
 
   return stream;
