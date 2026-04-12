@@ -32,7 +32,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Auth middleware - validates Supabase JWT
-app.use('/api', async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Missing authorization header' });
@@ -59,13 +59,13 @@ app.use('/api', async (req: express.Request, res: express.Response, next: expres
   } catch (err) {
     res.status(401).json({ error: 'Authentication failed' });
   }
-});
+};
 
-// Routes
-app.use('/api/planner', plannerRouter);
-app.use('/api/cloud', cloudRouter);
-app.use('/api/jobs', jobsRouter);
-app.use('/api/monitoring', monitoringRouter);
+// Routes with auth middleware
+app.use('/api/planner', authMiddleware, plannerRouter);
+app.use('/api/cloud', authMiddleware, cloudRouter);
+app.use('/api/jobs', authMiddleware, jobsRouter);
+app.use('/api/monitoring', authMiddleware, monitoringRouter);
 
 const server = createServer(app);
 
