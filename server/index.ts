@@ -6,6 +6,17 @@ import { cloudRouter } from './routes/cloud';
 import { jobsRouter } from './routes/jobs';
 import { monitoringRouter } from './routes/monitoring';
 
+// Validate required environment variables at startup
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL) {
+  throw new Error('SUPABASE_URL environment variable is required');
+}
+if (!SUPABASE_ANON_KEY) {
+  throw new Error('SUPABASE_ANON_KEY environment variable is required');
+}
+
 const app = express();
 const PORT = process.env.SERVER_PORT || 3001;
 
@@ -14,6 +25,11 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '50mb' }));
+
+// Health check (unauthenticated)
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Auth middleware - validates Supabase JWT
 app.use('/api', async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -25,11 +41,10 @@ app.use('/api', async (req: express.Request, res: express.Response, next: expres
 
   try {
     const token = authHeader.split(' ')[1];
-    const supabaseUrl = process.env.SUPABASE_URL!;
-    const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: {
         Authorization: `Bearer ${token}`,
-        apikey: process.env.SUPABASE_ANON_KEY!,
+        apikey: SUPABASE_ANON_KEY,
       },
     });
 
@@ -51,11 +66,6 @@ app.use('/api/planner', plannerRouter);
 app.use('/api/cloud', cloudRouter);
 app.use('/api/jobs', jobsRouter);
 app.use('/api/monitoring', monitoringRouter);
-
-// Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
 
 const server = createServer(app);
 

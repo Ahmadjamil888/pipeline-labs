@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { monitoringApi, jobsApi } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -220,9 +220,9 @@ export default function MonitorPage() {
               <div className="bg-[#1c1b1b] rounded-xl p-5 border border-white/5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <a href="/dashboard/jobs" className="p-1 text-neutral-400 hover:text-white">
+                    <Link to="/dashboard/jobs" className="p-1 text-neutral-400 hover:text-white">
                       <ArrowLeft className="w-4 h-4" />
-                    </a>
+                    </Link>
                     <div>
                       <h3 className="font-medium text-white">
                         {selectedJob.training_plans?.datasets?.file_name || 'Training Job'}

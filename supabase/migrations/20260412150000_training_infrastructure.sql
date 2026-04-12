@@ -2,7 +2,8 @@
 -- TRAINING INFRASTRUCTURE - Cloud Providers, Training Jobs, Logs, Metrics
 -- =====================================================
 -- This migration adds the full ML training pipeline to Pipeline Labs.
--- Users store their own cloud API keys (encrypted at rest via RLS).
+-- Users store their own cloud API keys (encrypted at rest via AES-256-GCM in the backend).
+-- RLS policies ensure users can only access their own data.
 -- AI generates training plans; the system executes them via safe API adapters.
 -- =====================================================
 
@@ -176,6 +177,7 @@ CREATE POLICY "Users manage own model artifacts"
 -- =====================================================
 -- INDEXES for performance
 -- =====================================================
+CREATE INDEX IF NOT EXISTS cloud_providers_user_id_idx ON public.cloud_providers(user_id);
 CREATE INDEX IF NOT EXISTS training_plans_user_id_idx ON public.training_plans(user_id);
 CREATE INDEX IF NOT EXISTS training_plans_dataset_id_idx ON public.training_plans(dataset_id);
 CREATE INDEX IF NOT EXISTS training_plans_status_idx ON public.training_plans(status);

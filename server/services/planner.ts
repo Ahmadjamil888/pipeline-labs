@@ -82,7 +82,12 @@ export function analyzeDataset(data: Record<string, unknown>[]): DatasetAnalysis
     };
   }
 
-  const keys = Object.keys(data[0]);
+  // Collect all unique keys across all rows (handle sparse data)
+  const allKeys = new Set<string>();
+  for (const row of data) {
+    Object.keys(row).forEach(key => allKeys.add(key));
+  }
+  const keys = Array.from(allKeys);
   const columns: ColumnInfo[] = keys.map(name => {
     const values = data.map(row => row[name]);
     const nonNull = values.filter(v => v !== null && v !== undefined && v !== '');
@@ -186,8 +191,7 @@ function detectTaskType(columns: ColumnInfo[], labelColumn: string | null, data:
       return 'text_classification';
     }
 
-    // Binary or multiclass
-    if (labelCol.unique_count <= 2) return 'classification';
+    // Binary or multiclass classification
     if (labelCol.unique_count <= 20) return 'classification';
     // Many categories — could be text classification
     return 'text_classification';
@@ -195,6 +199,7 @@ function detectTaskType(columns: ColumnInfo[], labelColumn: string | null, data:
 
   if (labelCol.type === 'numerical') {
     // Check if it's really continuous or discrete
+    // Numerical with few unique values could be classification (e.g., 0/1, 1-5 ratings)
     if (labelCol.unique_count <= 20) return 'classification';
     return 'regression';
   }
@@ -454,30 +459,94 @@ Generate a JSON training plan with these fields:
 
 Return ONLY the JSON, no other text.`;
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
-        }),
+    // Fetch with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
+          }),
+        }
+      );
+      
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status}`);
       }
-    );
 
-    const result = await response.json() as any;
-    const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const result = await response.json() as any;
+      const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const aiPlan = JSON.parse(jsonMatch[0]);
-      return { ...basePlan, ...aiPlan };
+      // Extract JSON from response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const aiPlan = JSON.parse(jsonMatch[0]);
+        
+        // Validate and sanitize AI response
+        const sanitizedPlan: Partial<TrainingPlan> = {
+          task: isValidTaskType(aiPlan.task) ? aiPlan.task : basePlan.task,
+          model: sanitizeModelName(aiPlan.model || aiPlan.model_name || basePlan.model),
+          framework: isValidFramework(aiPlan.framework) ? aiPlan.framework : basePlan.framework,
+          train_test_split: isValidSplit(aiPlan.train_test_split) ? aiPlan.train_test_split : basePlan.train_test_split,
+          batch_size: typeof aiPlan.batch_size === 'number' && aiPlan.batch_size > 0 ? Math.min(Math.max(aiPlan.batch_size, 1), 256) : basePlan.batch_size,
+          optimizer: typeof aiPlan.optimizer === 'string' ? aiPlan.optimizer : basePlan.optimizer,
+          learning_rate: typeof aiPlan.learning_rate === 'number' && aiPlan.learning_rate > 0 ? Math.min(Math.max(aiPlan.learning_rate, 1e-7), 1) : basePlan.learning_rate,
+          epochs: typeof aiPlan.epochs === 'number' && aiPlan.epochs > 0 ? Math.min(Math.max(aiPlan.epochs, 1), 100) : basePlan.epochs,
+          gpu_required: isValidGpuType(aiPlan.gpu_required) ? aiPlan.gpu_required : basePlan.gpu_required,
+          preprocessing: Array.isArray(aiPlan.preprocessing) ? aiPlan.preprocessing : basePlan.preprocessing,
+          metrics: Array.isArray(aiPlan.metrics) ? aiPlan.metrics : basePlan.metrics,
+          estimated_time_minutes: typeof aiPlan.estimated_time_minutes === 'number' ? aiPlan.estimated_time_minutes : basePlan.estimated_time_minutes,
+          estimated_cost_usd: typeof aiPlan.estimated_cost_usd === 'number' ? aiPlan.estimated_cost_usd : basePlan.estimated_cost_usd,
+        };
+        
+        return { ...basePlan, ...sanitizedPlan };
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.error('[AI Planner] Gemini request timed out, using rule-based plan');
+      } else {
+        console.error('[AI Planner] Gemini call failed, using rule-based plan:', err);
+      }
     }
-  } catch (err) {
-    console.error('[AI Planner] Gemini call failed, using rule-based plan:', err);
-  }
 
-  return basePlan;
+    return basePlan;
+  }
+}
+
+// Validation helpers for AI response
+function isValidTaskType(value: unknown): value is TaskType {
+  const validTypes: TaskType[] = ['classification', 'regression', 'text_classification', 'ner', 'llm_finetuning', 'image_classification', 'object_detection', 'clustering', 'anomaly_detection'];
+  return validTypes.includes(value as TaskType);
+}
+
+function isValidFramework(value: unknown): boolean {
+  const validFrameworks = ['sklearn', 'xgboost', 'pytorch', 'tensorflow'];
+  return validFrameworks.includes(value as string);
+}
+
+function isValidSplit(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  // Check formats like "80/20", "0.8", "80%"
+  return /^\d+\/\d+$/.test(value) || /^\d+%$/.test(value) || /^\d*\.?\d+$/.test(value);
+}
+
+function isValidGpuType(value: unknown): boolean {
+  const validGpus = ['none', 'T4', 'A10G', 'V100', 'A100'];
+  return validGpus.includes(value as string);
+}
+
+function sanitizeModelName(modelName: string): string {
+  if (typeof modelName !== 'string') return 'RandomForest';
+  // Allow only alphanumeric, hyphens, underscores, and dots (for HuggingFace models)
+  return modelName.replace(/[^a-zA-Z0-9._-]/g, '') || 'RandomForest';
 }

@@ -37,9 +37,49 @@ function generateTrainingScript(plan: TrainingPlan, datasetUrl: string): string 
   return generatePytorchScript(plan, datasetUrl);
 }
 
+// Robust parser for train_test_split (e.g., "80/20", "70-30", "80%")
+function parseTrainTestSplit(splitStr: string): number {
+  const cleaned = splitStr.trim();
+  // Handle formats like "80/20", "70-30", "80%", "0.8"
+  if (cleaned.includes('/')) {
+    const [train] = cleaned.split('/').map(Number);
+    return train / 100;
+  }
+  if (cleaned.includes('-')) {
+    const [train] = cleaned.split('-').map(Number);
+    return train / 100;
+  }
+  if (cleaned.includes('%')) {
+    return parseFloat(cleaned.replace('%', '')) / 100;
+  }
+  const num = parseFloat(cleaned);
+  if (!isNaN(num)) {
+    return num > 1 ? num / 100 : num;
+  }
+  return 0.8; // Default fallback
+}
+
+// Sanitize model name to prevent injection
+function sanitizeModelName(modelName: string): string {
+  // Allow only alphanumeric, hyphens, underscores, and dots (for HuggingFace models)
+  return modelName.replace(/[^a-zA-Z0-9._-]/g, '');
+}
+
+// Escape dataset URL for shell safety
+function escapeShellString(str: string): string {
+  return str.replace(/'/g, "'\\''");
+}
+
+// Generate unique heredoc delimiter
+function generateHeredocDelimiter(): string {
+  return `SCRIPT_EOF_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
 function generateSklearnScript(plan: TrainingPlan, datasetUrl: string): string {
   const isClassification = plan.task.includes('classification');
   const isXgboost = plan.framework === 'xgboost';
+  const splitRatio = parseTrainTestSplit(plan.train_test_split);
+  const escapedUrl = escapeShellString(datasetUrl);
 
   return `#!/usr/bin/env python3
 """Auto-generated training script by Pipeline Labs"""
@@ -54,7 +94,7 @@ ${isXgboost ? 'from xgboost import XGBClassifier as Model' : isClassification ? 
 
 # Load dataset
 print("LOADING_DATA")
-df = pd.read_csv("${datasetUrl}")
+df = pd.read_csv('${escapedUrl}')
 print(f"Dataset loaded: {len(df)} rows, {len(df.columns)} columns")
 
 # Preprocessing
@@ -75,7 +115,7 @@ scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
 # Split
-split_ratio = ${plan.train_test_split.split('/').map(Number)[0] / 100}
+split_ratio = ${splitRatio.toFixed(2)}
 X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, train_size=split_ratio, random_state=42)
 print(f"Train: {len(X_train)}, Test: {len(X_test)}")
 
@@ -107,6 +147,10 @@ print("DONE")
 }
 
 function generatePytorchScript(plan: TrainingPlan, datasetUrl: string): string {
+  const sanitizedModel = sanitizeModelName(plan.model);
+  const splitRatio = parseTrainTestSplit(plan.train_test_split);
+  const escapedUrl = escapeShellString(datasetUrl);
+  
   return `#!/usr/bin/env python3
 """Auto-generated PyTorch training script by Pipeline Labs"""
 import json
@@ -120,7 +164,7 @@ import numpy as np
 
 # Load dataset
 print("LOADING_DATA")
-df = pd.read_csv("${datasetUrl}")
+df = pd.read_csv('${escapedUrl}')
 print(f"Dataset loaded: {len(df)} rows")
 
 # Setup
@@ -129,9 +173,9 @@ print(f"Using device: {device}")
 
 # Load model and tokenizer
 print("LOADING_MODEL")
-tokenizer = AutoTokenizer.from_pretrained("${plan.model}")
+tokenizer = AutoTokenizer.from_pretrained("${sanitizedModel}")
 num_labels = df.iloc[:, -1].nunique()
-model = AutoModelForSequenceClassification.from_pretrained("${plan.model}", num_labels=num_labels)
+model = AutoModelForSequenceClassification.from_pretrained("${sanitizedModel}", num_labels=num_labels)
 model.to(device)
 
 # Custom dataset
@@ -157,7 +201,7 @@ label_col = df.columns[-1]
 le = LabelEncoder()
 df[label_col] = le.fit_transform(df[label_col].astype(str))
 
-train_df, test_df = train_test_split(df, train_size=${plan.train_test_split.split('/').map(Number)[0] / 100}, random_state=42)
+train_df, test_df = train_test_split(df, train_size=${splitRatio.toFixed(2)}, random_state=42)
 
 train_dataset = TextDataset(train_df[text_col], train_df[label_col], tokenizer)
 test_dataset = TextDataset(test_df[text_col], test_df[label_col], tokenizer)
@@ -223,6 +267,8 @@ export class ExecutionEngine {
   private status: ExecutionStatus;
   private onLogCallback?: (log: string) => void;
   private onStatusCallback?: (status: ExecutionStatus) => void;
+  private cancellationRequested = false;
+  private launchedInstanceId?: string;
 
   constructor(
     private config: ExecutionConfig,
@@ -273,6 +319,7 @@ export class ExecutionEngine {
       }
 
       this.addLog(`Instance launched: ${launchResult.instance.instanceId} (${launchResult.instance.instanceType})`);
+      this.launchedInstanceId = launchResult.instance.instanceId;
       this.updateStatus({ progress: 20, message: 'Instance provisioned' });
 
       // Phase 3: Install dependencies
@@ -296,9 +343,10 @@ export class ExecutionEngine {
       const trainingScript = generateTrainingScript(this.config.plan, datasetUrl);
 
       // Upload training script to instance
+      const heredocDelimiter = generateHeredocDelimiter();
       await this.connector.executeCommand(
         launchResult.instance.instanceId,
-        `cat > /workspace/train.py << 'SCRIPT_EOF'\n${trainingScript}\nSCRIPT_EOF`
+        `cat > /workspace/train.py << '${heredocDelimiter}'\n${trainingScript}\n${heredocDelimiter}`
       );
       this.addLog('Training script uploaded');
 
@@ -333,6 +381,7 @@ export class ExecutionEngine {
       this.addLog('Terminating cloud instance...');
       await this.connector.terminateInstance(launchResult.instance.instanceId);
       this.addLog('Instance terminated');
+      this.launchedInstanceId = undefined;
 
       this.updateStatus({
         phase: 'completed',
@@ -348,13 +397,40 @@ export class ExecutionEngine {
         progress: 0,
         message: `Training failed: ${err.message}`,
       });
+      
+      // Terminate instance on failure
+      if (this.launchedInstanceId) {
+        try {
+          this.addLog('Terminating instance due to failure...');
+          await this.connector.terminateInstance(this.launchedInstanceId);
+          this.addLog('Instance terminated');
+        } catch (terminateErr) {
+          this.addLog(`Failed to terminate instance: ${terminateErr}`);
+        }
+        this.launchedInstanceId = undefined;
+      }
+      
       return this.status;
     }
   }
 
   async cancel(): Promise<boolean> {
+    this.cancellationRequested = true;
     this.addLog('Cancellation requested...');
     this.updateStatus({ phase: 'failed', progress: 0, message: 'Training cancelled by user' });
+    
+    // Terminate instance if running
+    if (this.launchedInstanceId) {
+      try {
+        this.addLog('Terminating instance due to cancellation...');
+        await this.connector.terminateInstance(this.launchedInstanceId);
+        this.addLog('Instance terminated');
+      } catch (err) {
+        this.addLog(`Failed to terminate instance: ${err}`);
+      }
+      this.launchedInstanceId = undefined;
+    }
+    
     return true;
   }
 

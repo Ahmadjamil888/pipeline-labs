@@ -873,9 +873,9 @@ function DashboardSimulation({ theme }: { theme: Theme }) {
         <div style={{ textAlign: "center", marginBottom: 48 }}>
           <Eyebrow>How Pipeline Labs works</Eyebrow>
           <SectionTitle>See the AI take over your pipeline</SectionTitle>
-          <SubText style={{ margin: "0 auto" }}>
-            From raw data to production-ready datasets — watch every step happen automatically, in real time.
-          </SubText>
+          <p className="text-neutral-400 text-lg font-light leading-relaxed">
+            Train ML models on your own cloud infrastructure. Upload datasets, AI generates optimal training plans, and run jobs on AWS, Azure, GCP, or RunPod — all with live monitoring.
+          </p>
         </div>
 
         {/* Interactive Dashboard UI */}
@@ -1162,10 +1162,10 @@ function DashboardSimulation({ theme }: { theme: Theme }) {
           marginTop: 32,
         }}>
           {[
-            "Natural language processing",
-            "Schema-aware cleaning",
-            "Automated validation",
-            "Export to any format",
+            "AI-powered training plans",
+            "Multi-cloud GPU training",
+            "Real-time job monitoring",
+            "Model artifact export",
           ].map((feature) => (
             <div key={feature} style={{
               padding: "8px 16px",

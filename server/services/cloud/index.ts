@@ -2,37 +2,43 @@
 // CLOUD CONNECTORS - Safe API Adapters
 // IMPORTANT: AI does NOT directly control cloud.
 // AI generates a structured "training plan".
-// System executes it via these safe adapters.
 // =====================================================
-
+// Cloud Provider Connectors
+// =====================================================
 export interface CloudProviderConfig {
   provider: 'aws' | 'azure' | 'gcp' | 'runpod';
   credentials: Record<string, string>;
   region?: string;
 }
 
-export interface InstanceSpec {
-  instanceId: string;
-  instanceType: string;
-  ip?: string;
-  region: string;
-  gpuType?: string;
-  status: 'pending' | 'running' | 'stopped' | 'terminated';
-  hourlyCost?: number;
-}
-
 export interface LaunchResult {
   success: boolean;
-  instance?: InstanceSpec;
+  instance?: {
+    instanceId: string;
+    instanceType: string;
+    ip?: string;
+    region: string;
+    gpuType: string;
+    status: string;
+    hourlyCost: number;
+  };
   error?: string;
 }
 
 export interface CommandResult {
   success: boolean;
-  exitCode?: number;
+  exitCode: number;
   stdout?: string;
   stderr?: string;
   error?: string;
+}
+
+export interface InstanceSpec {
+  instanceId: string;
+  instanceType: string;
+  region: string;
+  status: string;
+  ip?: string;
 }
 
 export interface ICloudConnector {
@@ -42,6 +48,43 @@ export interface ICloudConnector {
   getInstanceStatus(instanceId: string): Promise<InstanceSpec | null>;
   terminateInstance(instanceId: string): Promise<boolean>;
   getEstimatedCost(gpuType: string, hours: number): Promise<number>;
+}
+
+// Helper: Fetch with timeout
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+}
+
+// Helper: Create connector based on provider type
+export function createConnector(config: CloudProviderConfig): ICloudConnector {
+  switch (config.provider) {
+    case 'aws':
+      return new AWSConnector(config);
+    case 'azure':
+      return new AzureConnector(config);
+    case 'gcp':
+      return new GCPConnector(config);
+    case 'runpod':
+      return new RunPodConnector(config);
+    default:
+      throw new Error(`Unsupported provider: ${config.provider}`);
+  }
 }
 
 // =====================================================
@@ -60,19 +103,33 @@ export class AWSConnector implements ICloudConnector {
 
   async validate(): Promise<boolean> {
     try {
-      // Validate credentials by calling STS GetCallerIdentity
-      const response = await fetch('https://sts.amazonaws.com/', {
+      // NOTE: This is a stub for demonstration. In production, use the AWS SDK:
+      // const AWS = require('aws-sdk');
+      // const sts = new AWS.STS({
+      //   accessKeyId: this.credentials.accessKeyId,
+      //   secretAccessKey: this.credentials.secretAccessKey,
+      //   region: this.credentials.region,
+      // });
+      // await sts.getCallerIdentity().promise();
+      
+      // For now, basic presence check - proper AWS signature required for real STS call
+      if (!this.credentials.accessKeyId || !this.credentials.secretAccessKey) {
+        return false;
+      }
+      
+      // Simulate validation with timeout
+      await fetchWithTimeout('https://sts.amazonaws.com/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': `AWS4-HMAC-SHA256 Credential=${this.credentials.accessKeyId}/...`,
         },
         body: 'Action=GetCallerIdentity&Version=2011-06-15',
-      });
-      return response.ok;
-    } catch {
-      // For now, basic validation - in production, use AWS SDK
-      return !!(this.credentials.accessKeyId && this.credentials.secretAccessKey);
+      }, 3000);
+      
+      return true;
+    } catch (error) {
+      console.error('AWS validation error:', error);
+      return false;
     }
   }
 
@@ -339,11 +396,12 @@ export class RunPodConnector implements ICloudConnector {
 
   async validate(): Promise<boolean> {
     try {
-      const response = await fetch('https://api.runpod.io/v2/user', {
+      const response = await fetchWithTimeout('https://api.runpod.io/v2/user', {
         headers: { Authorization: `Bearer ${this.apiKey}` },
-      });
+      }, 5000);
       return response.ok;
-    } catch {
+    } catch (error) {
+      console.error('RunPod validation error:', error);
       return !!this.apiKey;
     }
   }
@@ -360,7 +418,7 @@ export class RunPodConnector implements ICloudConnector {
       const gpuDisplayName = gpuToPod[gpuType] || 'NVIDIA RTX A4000';
 
       // Use RunPod API to create a pod
-      const response = await fetch('https://api.runpod.io/v2/pods', {
+      const response = await fetchWithTimeout('https://api.runpod.io/v2/pods', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
@@ -374,7 +432,7 @@ export class RunPodConnector implements ICloudConnector {
           minMemory: 20,
           networkVolumeId: null,
         }),
-      });
+      }, 10000);
 
       if (!response.ok) {
         const err = await response.text();
@@ -402,14 +460,14 @@ export class RunPodConnector implements ICloudConnector {
 
   async executeCommand(instanceId: string, command: string): Promise<CommandResult> {
     try {
-      const response = await fetch(`https://api.runpod.io/v2/pods/${instanceId}/exec`, {
+      const response = await fetchWithTimeout(`https://api.runpod.io/v2/pods/${instanceId}/exec`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ command }),
-      });
+      }, 30000);
 
       if (!response.ok) {
         return { success: false, error: 'Failed to execute command' };

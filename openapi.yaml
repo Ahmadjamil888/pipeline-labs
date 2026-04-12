@@ -5,17 +5,17 @@ info:
     AI Data Infrastructure API for ML Teams. Transform raw data into production-ready ML datasets with AI-powered preprocessing, schema-aware cleaning, automated validation, and reproducible workflows.
   version: 1.0.0
   contact:
-    name: Pipeline Labs Support
-    email: support@pipelinelabs.ai
-    url: https://pipelinelabs.ai
+    name: zehanx technologies
+    email: zehanxtech@gmail.com
+    url: https://zehanxtech.com
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
 servers:
-  - url: https://api.pipelinelabs.ai/v1
+  - url: https://pipelinelabs-ashen.vercel.app/api
     description: Production API
-  - url: https://staging-api.pipelinelabs.ai/v1
-    description: Staging API
+  - url: http://localhost:3000/api
+    description: Local Development
 
 paths:
   /datasets:
@@ -361,7 +361,7 @@ paths:
   /status:
     get:
       summary: API Status
-      description: Check API and service health status
+      description: Check API and service health status (public endpoint, no authentication required)
       operationId: getStatus
       tags:
         - System
@@ -373,13 +373,520 @@ paths:
               schema:
                 $ref: '#/components/schemas/SystemStatus'
 
+  # ============================================
+  # TRAINING PLANNER API
+  # ============================================
+  /planner/analyze:
+    post:
+      summary: Analyze dataset and generate training plan
+      description: AI analyzes dataset to detect data types, label columns, and generate an optimal ML training plan
+      operationId: analyzeAndPlan
+      tags:
+        - AI Training Planner
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                datasetId:
+                  type: string
+                  format: uuid
+                  description: ID of the dataset to analyze
+                userObjective:
+                  type: string
+                  description: Optional training objective (e.g., "Maximize F1 score")
+      responses:
+        '200':
+          description: Analysis complete with training plan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analysis:
+                    $ref: '#/components/schemas/DatasetAnalysis'
+                  plan:
+                    $ref: '#/components/schemas/TrainingPlan'
+                  planId:
+                    type: string
+                    format: uuid
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /planner:
+    get:
+      summary: List training plans
+      description: Get all training plans for the authenticated user
+      operationId: listPlans
+      tags:
+        - AI Training Planner
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of training plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TrainingPlanRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /planner/{planId}:
+    get:
+      summary: Get training plan
+      description: Retrieve a specific training plan by ID
+      operationId: getPlan
+      tags:
+        - AI Training Planner
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Training plan details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingPlanRecord'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    patch:
+      summary: Update training plan
+      description: Modify training plan parameters or status (e.g., approve for execution)
+      operationId: updatePlan
+      tags:
+        - AI Training Planner
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan:
+                  $ref: '#/components/schemas/TrainingPlan'
+                status:
+                  type: string
+                  enum: [draft, approved, rejected, executing, completed, failed]
+      responses:
+        '200':
+          description: Plan updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingPlanRecord'
+
+  # ============================================
+  # CLOUD PROVIDERS API
+  # ============================================
+  /cloud/providers:
+    get:
+      summary: List cloud providers
+      description: Get all connected cloud provider accounts
+      operationId: listProviders
+      tags:
+        - Cloud Connect
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of cloud providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CloudProvider'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    
+    post:
+      summary: Add cloud provider
+      description: Connect a new cloud provider (AWS, Azure, GCP, or RunPod)
+      operationId: addProvider
+      tags:
+        - Cloud Connect
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloudProviderInput'
+      responses:
+        '201':
+          description: Provider added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudProvider'
+        '400':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /cloud/providers/{id}:
+    patch:
+      summary: Update cloud provider
+      description: Update provider credentials or settings
+      operationId: updateProvider
+      tags:
+        - Cloud Connect
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                credentials:
+                  type: object
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Provider updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudProvider'
+    
+    delete:
+      summary: Delete cloud provider
+      description: Remove a connected cloud provider
+      operationId: deleteProvider
+      tags:
+        - Cloud Connect
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Provider deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /cloud/estimate-cost:
+    post:
+      summary: Estimate training cost
+      description: Get estimated cost for a training job on a specific cloud provider
+      operationId: estimateCost
+      tags:
+        - Cloud Connect
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                providerId:
+                  type: string
+                  format: uuid
+                gpuType:
+                  type: string
+                  enum: [none, T4, A10G, V100, A100]
+                estimatedHours:
+                  type: number
+                  default: 1
+      responses:
+        '200':
+          description: Cost estimate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    type: string
+                  gpuType:
+                    type: string
+                  estimatedHours:
+                    type: number
+                  estimatedCostUsd:
+                    type: number
+
+  # ============================================
+  # TRAINING JOBS API
+  # ============================================
+  /jobs:
+    get:
+      summary: List training jobs
+      description: Get all training jobs for the authenticated user
+      operationId: listJobs
+      tags:
+        - Training Jobs
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of training jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TrainingJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /jobs/start:
+    post:
+      summary: Start training job
+      description: Execute an approved training plan on a cloud provider
+      operationId: startJob
+      tags:
+        - Training Jobs
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                planId:
+                  type: string
+                  format: uuid
+                  description: Approved training plan ID
+                cloudProviderId:
+                  type: string
+                  format: uuid
+                  description: Cloud provider to use for training
+      responses:
+        '200':
+          description: Training job started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /jobs/{jobId}:
+    get:
+      summary: Get training job
+      description: Retrieve details of a specific training job
+      operationId: getJob
+      tags:
+        - Training Jobs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{jobId}/cancel:
+    post:
+      summary: Cancel training job
+      description: Stop a running training job and terminate cloud resources
+      operationId: cancelJob
+      tags:
+        - Training Jobs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  # ============================================
+  # MONITORING API
+  # ============================================
+  /monitoring/{jobId}/logs:
+    get:
+      summary: Get training logs
+      description: Retrieve streaming logs from a training job
+      operationId: getLogs
+      tags:
+        - Monitoring
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Training logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TrainingLog'
+
+  /monitoring/{jobId}/metrics:
+    get:
+      summary: Get training metrics
+      description: Retrieve time-series metrics (loss, accuracy, GPU usage) for a training job
+      operationId: getMetrics
+      tags:
+        - Monitoring
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Training metrics grouped by metric name
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TrainingMetric'
+
+  /monitoring/{jobId}/status:
+    get:
+      summary: Get job status
+      description: Get current status, recent logs, and latest metrics for a job
+      operationId: getJobStatus
+      tags:
+        - Monitoring
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job status summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  recentLogs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrainingLog'
+                  latestMetrics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrainingMetric'
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT token from Supabase authentication
+      description: |
+        JWT token from Supabase authentication. All authenticated endpoints validate the JWT token
+        and enforce Row Level Security (RLS) policies to ensure users can only access their own data.
 
   schemas:
     Dataset:
@@ -565,6 +1072,297 @@ components:
                 type: string
               responseTime:
                 type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    # ============================================
+    # TRAINING PLANNER SCHEMAS
+    # ============================================
+    DatasetAnalysis:
+      type: object
+      properties:
+        data_type:
+          type: string
+          enum: [tabular, text, image, audio, mixed]
+        row_count:
+          type: integer
+        column_count:
+          type: integer
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+                enum: [numerical, categorical, text, datetime, id]
+              unique_count:
+                type: integer
+              null_percent:
+                type: number
+        label_column:
+          type: string
+          nullable: true
+        task_type:
+          type: string
+          enum: [classification, regression, text_classification, ner, llm_finetuning, image_classification, object_detection, clustering, anomaly_detection]
+        suggested_models:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              framework:
+                type: string
+              gpu_required:
+                type: string
+              estimated_time_minutes:
+                type: number
+              estimated_cost_usd:
+                type: number
+              confidence:
+                type: number
+        preprocessing_steps:
+          type: array
+          items:
+            type: string
+        data_quality_score:
+          type: number
+          minimum: 0
+          maximum: 100
+
+    TrainingPlan:
+      type: object
+      properties:
+        task:
+          type: string
+        model:
+          type: string
+          description: Model name (e.g., distilbert-base-uncased, XGBoost)
+        framework:
+          type: string
+          enum: [pytorch, tensorflow, sklearn, xgboost]
+        train_test_split:
+          type: string
+          example: "80/20"
+        batch_size:
+          type: integer
+        optimizer:
+          type: string
+          example: adamw
+        learning_rate:
+          type: number
+          example: 0.001
+        epochs:
+          type: integer
+        gpu_required:
+          type: string
+          enum: [none, T4, A10G, V100, A100]
+        preprocessing:
+          type: array
+          items:
+            type: string
+        metrics:
+          type: array
+          items:
+            type: string
+        estimated_time_minutes:
+          type: number
+        estimated_cost_usd:
+          type: number
+        hyperparameter_search:
+          type: object
+          properties:
+            method:
+              type: string
+              enum: [grid, random, bayesian]
+            params:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: number
+        reasoning:
+          type: string
+          description: AI explanation for plan choices
+
+    TrainingPlanRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        dataset_id:
+          type: string
+          format: uuid
+        plan:
+          $ref: '#/components/schemas/TrainingPlan'
+        dataset_analysis:
+          $ref: '#/components/schemas/DatasetAnalysis'
+        status:
+          type: string
+          enum: [draft, approved, rejected, executing, completed, failed]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ============================================
+    # CLOUD PROVIDER SCHEMAS
+    # ============================================
+    CloudProvider:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [aws, azure, gcp, runpod]
+        label:
+          type: string
+        credentials:
+          type: object
+          description: |
+            Masked credentials (actual values hidden). Credentials are encrypted at rest
+            using AES-256-GCM encryption before storage in the database.
+        is_active:
+          type: boolean
+        last_verified_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    CloudProviderInput:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum: [aws, azure, gcp, runpod]
+        label:
+          type: string
+        credentials:
+          type: object
+          description: |
+            Provider-specific credentials. These are encrypted at rest using AES-256-GCM
+            encryption before storage in the database:
+            - AWS: {access_key_id, secret_access_key, region}
+            - Azure: {subscription_id, tenant_id, client_id, client_secret, resource_group, region}
+            - GCP: {project_id, service_account_key, region}
+            - RunPod: {api_key}
+      required:
+        - provider
+        - credentials
+
+    # ============================================
+    # TRAINING JOB SCHEMAS
+    # ============================================
+    TrainingJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        plan_id:
+          type: string
+          format: uuid
+        dataset_id:
+          type: string
+          format: uuid
+        cloud_provider_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum: [pending, provisioning, installing, running, completed, failed, cancelled]
+        instance_id:
+          type: string
+          description: Cloud instance ID
+        instance_type:
+          type: string
+          description: Instance type (e.g., g4dn.xlarge)
+        instance_ip:
+          type: string
+        instance_region:
+          type: string
+        final_metrics:
+          type: object
+          additionalProperties:
+            type: number
+        model_artifact_path:
+          type: string
+          description: Storage path for trained model
+        error_message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ============================================
+    # MONITORING SCHEMAS
+    # ============================================
+    TrainingLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        job_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          type: string
+          enum: [info, warn, error, debug]
+        message:
+          type: string
+        metadata:
+          type: object
+
+    TrainingMetric:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        job_id:
+          type: string
+          format: uuid
+        epoch:
+          type: integer
+        step:
+          type: integer
+        metric_name:
+          type: string
+          examples: [accuracy, loss, f1_score, val_loss]
+        metric_value:
+          type: number
         timestamp:
           type: string
           format: date-time

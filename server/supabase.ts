@@ -1,9 +1,13 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
 
-// Admin client for server-side operations (uses service role key if available)
+if (!supabaseServiceKey) {
+  throw new Error('SUPABASE_SERVICE_KEY environment variable is required for admin operations');
+}
+
+// Admin client for server-side operations (uses service role key)
 export const supabaseAdmin: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
     autoRefreshToken: false,

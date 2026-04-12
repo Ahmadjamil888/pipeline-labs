@@ -102,10 +102,7 @@ export default function CloudConnect() {
         formData
       );
       toast.success(`${config.name} cloud provider added successfully`);
-      setShowAddModal(false);
-      setSelectedProvider(null);
-      setFormData({});
-      setLabel('');
+      resetModalState();
       await loadProviders();
     } catch (err: any) {
       toast.error(err.message || 'Failed to add provider');
@@ -126,6 +123,22 @@ export default function CloudConnect() {
 
   const handleFieldChange = (key: string, value: string) => {
     setFormData(prev => ({ ...prev, [key]: value }));
+  };
+
+  const resetModalState = () => {
+    setShowAddModal(false);
+    setSelectedProvider(null);
+    setFormData({});
+    setLabel('');
+  };
+
+  const maskCredential = (value: string, key: string): string => {
+    if (!value) return '';
+    // For sensitive keys, show only last 4 characters
+    if (key.toLowerCase().includes('key') || key.toLowerCase().includes('secret') || key.toLowerCase().includes('token')) {
+      return '•'.repeat(Math.max(0, value.length - 4)) + value.slice(-4);
+    }
+    return value;
   };
 
   if (isLoading) {
@@ -175,6 +188,7 @@ export default function CloudConnect() {
         <div className="space-y-3">
           {providers.map((provider) => {
             const config = providerConfig[provider.provider];
+            if (!config) return null; // Guard against unknown provider types
             const isExpanded = expandedId === provider.id;
 
             return (
@@ -232,7 +246,7 @@ export default function CloudConnect() {
                         {Object.entries(provider.credentials).map(([key, value]) => (
                           <div key={key} className="flex items-center justify-between">
                             <span className="text-sm text-neutral-400">{key.replace(/_/g, ' ')}</span>
-                            <span className="text-sm text-neutral-300 font-mono">{value}</span>
+                            <span className="text-sm text-neutral-300 font-mono">{maskCredential(String(value), key)}</span>
                           </div>
                         ))}
                         {provider.last_verified_at && (
@@ -258,7 +272,7 @@ export default function CloudConnect() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowAddModal(false)}
+            onClick={() => resetModalState()}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -337,9 +351,10 @@ export default function CloudConnect() {
                           <select
                             value={formData[field.key] || ''}
                             onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                            className="w-full mt-1 bg-neutral-900 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:border-white/20 focus:outline-none"
+                            required
+                            className={`w-full mt-1 bg-neutral-900 border rounded-lg px-4 py-2.5 text-sm focus:outline-none ${formData[field.key] ? 'border-white/20 text-white' : 'border-white/10 text-neutral-500'}`}
                           >
-                            <option value="">Select...</option>
+                            <option value="">Select {field.label}...</option>
                             {field.options?.map((opt) => (
                               <option key={opt} value={opt}>{opt}</option>
                             ))}
@@ -358,7 +373,7 @@ export default function CloudConnect() {
 
                     <div className="flex gap-3 pt-2">
                       <button
-                        onClick={() => setShowAddModal(false)}
+                        onClick={() => resetModalState()}
                         className="flex-1 px-4 py-2.5 rounded-lg text-sm text-neutral-400 border border-white/10 hover:bg-white/5 transition-colors"
                       >
                         Cancel

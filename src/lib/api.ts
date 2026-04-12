@@ -30,7 +30,24 @@ async function apiCall(path: string, options: RequestInit = {}): Promise<any> {
     throw new Error(err.error || 'API call failed');
   }
 
-  return response.json();
+  // Guard against empty bodies (e.g., 204 No Content)
+  const contentType = response.headers.get('Content-Type');
+  const contentLength = response.headers.get('Content-Length');
+  
+  if (response.status === 204 || contentLength === '0' || !contentType?.includes('json')) {
+    return null;
+  }
+
+  const text = await response.text();
+  if (!text.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`Failed to parse response as JSON: ${text}`);
+  }
 }
 
 // =====================================================

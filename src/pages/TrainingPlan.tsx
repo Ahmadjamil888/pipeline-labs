@@ -108,10 +108,30 @@ export default function TrainingPlanPage() {
   };
 
   const handleApproveAndTrain = async () => {
-    if (!planId) return;
+    if (!planId) {
+      toast.error('No training plan selected');
+      return;
+    }
     if (!selectedCloudId && plan?.gpu_required !== 'none') {
       toast.error('Please select a cloud provider to run GPU training');
       return;
+    }
+
+    // Validate plan parameters before starting
+    if (plan?.plan) {
+      const p = plan.plan;
+      if (p.epochs < 1 || p.epochs > 100) {
+        toast.error('Epochs must be between 1 and 100');
+        return;
+      }
+      if (p.batch_size < 1 || p.batch_size > 256) {
+        toast.error('Batch size must be between 1 and 256');
+        return;
+      }
+      if (p.learning_rate < 0 || p.learning_rate > 1) {
+        toast.error('Learning rate must be between 0 and 1');
+        return;
+      }
     }
 
     // Approve plan first
@@ -130,6 +150,12 @@ export default function TrainingPlanPage() {
       navigate(`/dashboard/monitor?job=${result.jobId}`);
     } catch (err: any) {
       toast.error(err.message || 'Failed to start training');
+      // Revert status on failure
+      try {
+        await plannerApi.updatePlan(planId, { status: 'draft' });
+      } catch (revertErr) {
+        console.error('Failed to revert plan status:', revertErr);
+      }
     } finally {
       setIsStarting(false);
     }
@@ -326,8 +352,20 @@ export default function TrainingPlanPage() {
                       <label className="text-xs text-neutral-500 uppercase">Epochs</label>
                       <input
                         type="number"
+                        min="1"
+                        max="100"
+                        step="1"
                         value={editedPlan?.epochs || 3}
-                        onChange={(e) => setEditedPlan(prev => prev ? { ...prev, epochs: parseInt(e.target.value) || 3 } : null)}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (isNaN(value) || value < 1) {
+                            setEditedPlan(prev => prev ? { ...prev, epochs: 1 } : null);
+                          } else if (value > 100) {
+                            setEditedPlan(prev => prev ? { ...prev, epochs: 100 } : null);
+                          } else {
+                            setEditedPlan(prev => prev ? { ...prev, epochs: value } : null);
+                          }
+                        }}
                         className="w-full mt-1 bg-neutral-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-white/20 focus:outline-none"
                       />
                     </div>
@@ -335,8 +373,20 @@ export default function TrainingPlanPage() {
                       <label className="text-xs text-neutral-500 uppercase">Batch Size</label>
                       <input
                         type="number"
+                        min="1"
+                        max="256"
+                        step="1"
                         value={editedPlan?.batch_size || 16}
-                        onChange={(e) => setEditedPlan(prev => prev ? { ...prev, batch_size: parseInt(e.target.value) || 16 } : null)}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (isNaN(value) || value < 1) {
+                            setEditedPlan(prev => prev ? { ...prev, batch_size: 1 } : null);
+                          } else if (value > 256) {
+                            setEditedPlan(prev => prev ? { ...prev, batch_size: 256 } : null);
+                          } else {
+                            setEditedPlan(prev => prev ? { ...prev, batch_size: value } : null);
+                          }
+                        }}
                         className="w-full mt-1 bg-neutral-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-white/20 focus:outline-none"
                       />
                     </div>

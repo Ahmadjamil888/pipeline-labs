@@ -53,7 +53,6 @@ interface Profile {
 const navItems = [
   { id: 'overview', label: 'Overview', icon: 'dashboard', path: '/dashboard' },
   { id: 'datasets', label: 'Datasets', icon: 'database', path: '/dashboard/datasets' },
-  { id: 'explore-ai', label: 'AI Data Scientist', icon: 'auto_fix', path: '/dashboard/clean-ai' },
   { id: 'train', label: 'Train Model', icon: 'model_training', path: '/dashboard/train' },
   { id: 'cloud', label: 'Cloud Connect', icon: 'cloud', path: '/dashboard/cloud' },
   { id: 'monitor', label: 'Monitor', icon: 'monitoring', path: '/dashboard/jobs' },
@@ -584,7 +583,7 @@ function DatasetsPage({
                 <span className="material-symbols-outlined text-white">table_chart</span>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); onDeleteDataset(dataset.id); }}
+                onClick={(e) => { e.stopPropagation(); onDeleteDataset(dataset.id, dataset.name); }}
                 className="p-2 text-neutral-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
               >
                 <Trash2 className="w-4 h-4" />
@@ -651,6 +650,7 @@ export default function Dashboard() {
   const [isUploading, setIsUploading] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; name: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Load profile - creates one if missing (handles race condition after OAuth signup)
@@ -877,16 +877,23 @@ export default function Dashboard() {
     }
   }
 
-  const handleDeleteDataset = async (id: string) => {
+  const handleDeleteDataset = async (id: string, name: string) => {
+    setDeleteConfirmation({ id, name })
+  }
+
+  const confirmDeleteDataset = async () => {
+    if (!deleteConfirmation) return
+    
     try {
       const { error } = await supabase
         .from('datasets')
         .delete()
-        .eq('id', id)
+        .eq('id', deleteConfirmation.id)
       
       if (error) throw error
       
       toast.success('Dataset deleted')
+      setDeleteConfirmation(null)
       await loadDatasets()
     } catch (error) {
       toast.error('Failed to delete dataset')
@@ -968,13 +975,38 @@ export default function Dashboard() {
                 />
               } 
             />
-            <Route path="/clean-ai" element={<AIDataScientistWrapper />} />
             <Route path="/train" element={<TrainingPlanPage />} />
             <Route path="/cloud" element={<CloudConnect />} />
             <Route path="/jobs" element={<MonitorPage />} />
           </Routes>
         </main>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmation && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1c1b1b] rounded-2xl border border-white/10 max-w-md w-full p-6">
+            <h3 className="text-xl font-medium text-white mb-2">Delete Dataset?</h3>
+            <p className="text-neutral-400 text-sm mb-6">
+              Are you sure you want to delete "{deleteConfirmation.name}"? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmation(null)}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm text-neutral-400 border border-white/10 hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteDataset}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

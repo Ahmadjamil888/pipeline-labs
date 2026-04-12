@@ -49,11 +49,16 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
     }
 
     // Fetch dataset for storage path
-    const { data: dataset } = await client
+    const { data: dataset, error: datasetError } = await client
       .from('datasets')
       .select('storage_path')
       .eq('id', plan.dataset_id)
       .single();
+
+    if (datasetError || !dataset || !dataset.storage_path) {
+      res.status(400).json({ error: 'Dataset or storage path not found' });
+      return;
+    }
 
     // Create training job record
     const { data: job, error: jobError } = await client
@@ -80,11 +85,16 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
       .eq('id', planId);
 
     // Generate a signed URL for the dataset
-    const { data: signedUrl } = await client.storage
+    const { data: signedUrl, error: signedUrlError } = await client.storage
       .from('datasets')
-      .createSignedUrl(dataset?.storage_path || '', 3600);
+      .createSignedUrl(dataset.storage_path, 3600);
 
-    const datasetUrl = signedUrl?.signedUrl || '';
+    if (signedUrlError || !signedUrl || !signedUrl.signedUrl) {
+      res.status(500).json({ error: 'Failed to create signed URL for dataset' });
+      return;
+    }
+
+    const datasetUrl = signedUrl.signedUrl;
 
     // Start execution engine in background
     const engine = new ExecutionEngine(
@@ -130,9 +140,18 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
               status: statusMap[status.phase] || status.phase,
               error_message: status.phase === 'failed' ? status.message : null,
               completed_at: status.phase === 'completed' ? new Date().toISOString() : null,
-              started_at: status.phase !== 'provisioning' ? new Date().toISOString() : null,
             })
+            .is('started_at', null)
             .eq('id', job.id);
+
+          // Set started_at only once when transitioning from provisioning
+          if (status.phase !== 'provisioning') {
+            await client
+              .from('training_jobs')
+              .update({ started_at: new Date().toISOString() })
+              .is('started_at', null)
+              .eq('id', job.id);
+          }
 
           // Save metrics during training
           if (status.currentEpoch && status.phase === 'training') {
@@ -174,6 +193,19 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
           }
         }
       }
+    }).catch(async (error) => {
+      console.error('[Jobs] Execution error:', error);
+      activeEngines.delete(job.id);
+      
+      // Update job status to failed
+      await client
+        .from('training_jobs')
+        .update({
+          status: 'failed',
+          error_message: error.message || 'Execution failed',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
     });
 
     res.json({ jobId: job.id, status: 'started' });
@@ -210,6 +242,7 @@ jobsRouter.get('/', async (req: Request, res: Response) => {
 // Get a specific job
 jobsRouter.get('/:jobId', async (req: Request, res: Response) => {
   try {
+    const user = (req as any).user;
     const accessToken = req.headers.authorization?.split(' ')[1] || '';
     const client = createUserClient(accessToken);
 
@@ -217,6 +250,7 @@ jobsRouter.get('/:jobId', async (req: Request, res: Response) => {
       .from('training_jobs')
       .select('*, training_plans(plan, dataset_analysis, datasets(file_name)), cloud_providers(provider, label)')
       .eq('id', req.params.jobId)
+      .eq('user_id', user.id)
       .single();
 
     if (error || !data) {
@@ -233,10 +267,25 @@ jobsRouter.get('/:jobId', async (req: Request, res: Response) => {
 // Cancel a running job
 jobsRouter.post('/:jobId/cancel', async (req: Request, res: Response) => {
   try {
+    const user = (req as any).user;
     const accessToken = req.headers.authorization?.split(' ')[1] || '';
     const client = createUserClient(accessToken);
 
     const jobId = String(req.params.jobId);
+
+    // Verify ownership first
+    const { data: job, error: jobError } = await client
+      .from('training_jobs')
+      .select('id')
+      .eq('id', jobId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (jobError || !job) {
+      res.status(404).json({ error: 'Job not found' });
+      return;
+    }
+
     const engine = activeEngines.get(jobId);
     if (engine) {
       await engine.cancel();
@@ -246,7 +295,8 @@ jobsRouter.post('/:jobId/cancel', async (req: Request, res: Response) => {
     await client
       .from('training_jobs')
       .update({ status: 'cancelled', completed_at: new Date().toISOString() })
-      .eq('id', jobId);
+      .eq('id', jobId)
+      .eq('user_id', user.id);
 
     res.json({ success: true });
   } catch (err: any) {

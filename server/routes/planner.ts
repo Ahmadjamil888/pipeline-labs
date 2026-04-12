@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { analyzeDataset, generateTrainingPlan, aiEnhancedPlan } from '../services/planner';
 import { supabaseAdmin, createUserClient } from '../supabase';
+import Papa from 'papaparse';
 
 export const plannerRouter = Router();
 
@@ -8,6 +9,10 @@ export const plannerRouter = Router();
 plannerRouter.post('/analyze', async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    if (!user || !user.id) {
+      res.status(401).json({ error: 'Unauthenticated' });
+      return;
+    }
     const { datasetId, userObjective } = req.body;
 
     if (!datasetId) {
@@ -48,19 +53,13 @@ plannerRouter.post('/analyze', async (req: Request, res: Response) => {
       data = JSON.parse(text);
       if (!Array.isArray(data)) data = [data];
     } else {
-      // Simple CSV parse
-      const lines = text.trim().split('\n');
-      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-      data = lines.slice(1).map(line => {
-        const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-        const row: Record<string, unknown> = {};
-        headers.forEach((h, i) => {
-          const v = values[i] || '';
-          const num = Number(v);
-          row[h] = !isNaN(num) && v !== '' ? num : v;
-        });
-        return row;
+      // Use papaparse for robust CSV parsing
+      const parsed = Papa.parse(text, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
       });
+      data = parsed.data as Record<string, unknown>[];
     }
 
     // Step A: Analyze dataset
@@ -89,7 +88,7 @@ plannerRouter.post('/analyze', async (req: Request, res: Response) => {
     }
 
     // Update dataset with detected info
-    await client
+    const { error: updateError } = await client
       .from('datasets')
       .update({
         data_type: analysis.data_type,
@@ -97,6 +96,11 @@ plannerRouter.post('/analyze', async (req: Request, res: Response) => {
         task_type: analysis.task_type,
       })
       .eq('id', datasetId);
+
+    if (updateError) {
+      console.error('Failed to update dataset:', updateError, 'datasetId:', datasetId);
+      // Non-fatal error, continue with response
+    }
 
     res.json({
       analysis,
@@ -166,6 +170,10 @@ plannerRouter.patch('/:planId', async (req: Request, res: Response) => {
 plannerRouter.get('/', async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    if (!user || !user.id) {
+      res.status(401).json({ error: 'Unauthenticated' });
+      return;
+    }
     const accessToken = req.headers.authorization?.split(' ')[1] || '';
     const client = createUserClient(accessToken);
 

@@ -6,7 +6,16 @@ export const monitoringRouter = Router();
 // Get logs for a training job
 monitoringRouter.get('/:jobId/logs', async (req: Request, res: Response) => {
   try {
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Missing authorization header' });
+      return;
+    }
+    const accessToken = authHeader.split(' ')[1];
+    if (!accessToken) {
+      res.status(401).json({ error: 'Missing access token' });
+      return;
+    }
     const client = createUserClient(accessToken);
 
     const limit = parseInt(req.query.limit as string) || 100;
@@ -33,14 +42,29 @@ monitoringRouter.get('/:jobId/logs', async (req: Request, res: Response) => {
 // Get metrics for a training job (for loss/accuracy graphs)
 monitoringRouter.get('/:jobId/metrics', async (req: Request, res: Response) => {
   try {
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Missing authorization header' });
+      return;
+    }
+    const accessToken = authHeader.split(' ')[1];
+    if (!accessToken) {
+      res.status(401).json({ error: 'Missing access token' });
+      return;
+    }
     const client = createUserClient(accessToken);
+
+    // Pagination support
+    const pageSize = Math.min(parseInt(req.query.pageSize as string) || 1000, 10000); // Max 10000
+    const page = Math.max(parseInt(req.query.page as string) || 0, 0);
+    const offset = page * pageSize;
 
     const { data, error } = await client
       .from('training_metrics')
       .select('*')
       .eq('job_id', req.params.jobId)
-      .order('timestamp', { ascending: true });
+      .order('timestamp', { ascending: true })
+      .range(offset, offset + pageSize - 1);
 
     if (error) {
       res.status(400).json({ error: error.message });
@@ -68,7 +92,16 @@ monitoringRouter.get('/:jobId/metrics', async (req: Request, res: Response) => {
 // Get job status summary
 monitoringRouter.get('/:jobId/status', async (req: Request, res: Response) => {
   try {
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Missing authorization header' });
+      return;
+    }
+    const accessToken = authHeader.split(' ')[1];
+    if (!accessToken) {
+      res.status(401).json({ error: 'Missing access token' });
+      return;
+    }
     const client = createUserClient(accessToken);
 
     const { data: job, error } = await client

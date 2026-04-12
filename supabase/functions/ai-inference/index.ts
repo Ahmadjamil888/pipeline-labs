@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import { GoogleGenAI } from "npm:@genai/gemini";
+import { GoogleGenerativeAI } from "@google/genai";
 
 // Global Deno namespace for IDE compatibility
 // Runtime: Deno is available in Supabase Edge Functions
@@ -30,19 +30,14 @@ Rules:
 - If data is present, always infer structure first
 `;
 
-const ai = new GoogleGenAI({
+const ai = new GoogleGenerativeAI({
   apiKey: Deno.env.get("GEMINI_API_KEY") || "",
 });
 
 // 🔥 Optimized Gemini streaming call
 async function streamGemini(prompt: string, systemPrompt: string) {
-  const stream = await ai.models.generateContentStream({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.3,
-      topP: 0.9,
-      maxOutputTokens: 4096,
-    },
+  const model = ai.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const stream = await model.generateContentStream({
     contents: [
       {
         role: "user",
@@ -53,6 +48,11 @@ async function streamGemini(prompt: string, systemPrompt: string) {
         ],
       },
     ],
+    generationConfig: {
+      temperature: 0.3,
+      topP: 0.9,
+      maxOutputTokens: 4096,
+    },
   });
 
   return stream;
@@ -71,6 +71,18 @@ export default async function handler(req: Request) {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  // Validate GEMINI_API_KEY
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!apiKey || apiKey.trim() === "") {
+    return new Response(
+      JSON.stringify({ error: "GEMINI_API_KEY is not configured" }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 
   try {
