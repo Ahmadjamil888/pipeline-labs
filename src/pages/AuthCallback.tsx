@@ -4,14 +4,59 @@ import { supabase } from '@/lib/supabase';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        navigate('/dashboard'); // redirect after login
-      } else {
-        navigate('/auth');
+    let isMounted = true;
+
+    const finishAuth = async () => {
+      const url = new URL(window.location.href);
+      const code = url.searchParams.get('code');
+
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          console.error('OAuth code exchange failed:', error);
+          if (isMounted) navigate('/auth', { replace: true });
+          return;
+        }
       }
-    });
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('Session lookup failed after OAuth:', sessionError);
+      }
+
+      if (session) {
+        if (isMounted) navigate('/dashboard', { replace: true });
+        return;
+      }
+
+      const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+        if (!isMounted) return;
+
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (nextSession) {
+            data.subscription.unsubscribe();
+            navigate('/dashboard', { replace: true });
+          }
+        }
+      });
+
+      window.setTimeout(() => {
+        data.subscription.unsubscribe();
+        if (isMounted) navigate('/auth', { replace: true });
+      }, 3000);
+    };
+
+    finishAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, [navigate]);
 
   return (
