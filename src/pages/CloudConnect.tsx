@@ -53,7 +53,7 @@ const providerConfig = {
   },
   runpod: {
     name: 'RunPod',
-    description: 'Simple GPU Cloud — Just an API Key',
+    description: 'Simple GPU Cloud - Just an API Key',
     color: '#7C3AED',
     fields: [
       { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'rpa-...' },
@@ -136,7 +136,7 @@ export default function CloudConnect() {
     if (!value) return '';
     // For sensitive keys, show only last 4 characters
     if (key.toLowerCase().includes('key') || key.toLowerCase().includes('secret') || key.toLowerCase().includes('token')) {
-      return '•'.repeat(Math.max(0, value.length - 4)) + value.slice(-4);
+      return '*'.repeat(Math.max(0, value.length - 4)) + value.slice(-4);
     }
     return value;
   };
@@ -151,28 +151,34 @@ export default function CloudConnect() {
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
         <div>
           <h2 className="text-3xl font-light text-white tracking-tight">Cloud Connect</h2>
-          <p className="text-neutral-400 mt-1">Connect your cloud accounts to run ML training jobs</p>
+          <p className="text-neutral-400 mt-1">Connect the cloud and storage accounts that should own training, artifacts, and deployment outputs.</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-white text-neutral-900 px-5 py-2.5 rounded-full font-bold text-sm hover:scale-105 transition-transform flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Add Cloud
-        </button>
+        <div className="bg-[#1c1b1b] rounded-2xl border border-white/5 p-5 space-y-4">
+          <p className="text-xs text-neutral-500 uppercase tracking-wider">Execution Model</p>
+          <p className="text-sm text-neutral-300">
+            Users bring their own cloud. Pipeline Labs stores masked credentials, validates access, and orchestrates training and artifact flows without becoming the system of record for compute or storage.
+          </p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-white text-neutral-900 px-5 py-2.5 rounded-2xl font-bold text-sm hover:scale-105 transition-transform flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Cloud
+          </button>
+        </div>
       </div>
 
       {/* Security Notice */}
-      <div className="bg-[#1c1b1b] rounded-xl p-5 border border-white/5 flex items-start gap-4">
+      <div className="bg-[#1c1b1b] rounded-2xl p-5 border border-white/5 flex items-start gap-4">
         <Shield className="w-5 h-5 text-[#d5c5a6] shrink-0 mt-0.5" />
         <div>
           <p className="text-sm text-neutral-300 font-medium">Your keys stay secure</p>
           <p className="text-xs text-neutral-500 mt-1">
-            API keys are stored in your Supabase vault with Row Level Security. Only you can access them.
-            AI never directly controls your cloud — it generates training plans that the system executes via safe API adapters.
+            Credentials are encrypted before storage, masked on read, and scoped to your account with Supabase Row Level Security.
+            AI never directly controls your cloud - it generates training plans that the system executes via safe API adapters.
           </p>
         </div>
       </div>
@@ -195,7 +201,7 @@ export default function CloudConnect() {
               <motion.div
                 key={provider.id}
                 layout
-                className="bg-[#1c1b1b] rounded-xl border border-white/5 overflow-hidden"
+                className="bg-[#1c1b1b] rounded-2xl border border-white/5 overflow-hidden"
               >
                 <div
                   className="p-5 flex items-center justify-between cursor-pointer hover:bg-white/[0.02] transition-colors"
@@ -210,7 +216,7 @@ export default function CloudConnect() {
                     </div>
                     <div>
                       <p className="font-medium text-white text-sm">{provider.label}</p>
-                      <p className="text-xs text-neutral-500">{config.name} — {config.description}</p>
+                      <p className="text-xs text-neutral-500">{config.name} - {config.description}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -278,13 +284,13 @@ export default function CloudConnect() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#1c1b1b] rounded-2xl border border-white/10 max-w-lg w-full max-h-[80vh] overflow-y-auto"
+              className="bg-[#1c1b1b] rounded-[28px] border border-white/10 max-w-lg w-full max-h-[80vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 space-y-6">
                 <div>
                   <h3 className="text-xl font-medium text-white">Add Cloud Provider</h3>
-                  <p className="text-sm text-neutral-400 mt-1">Connect your cloud account with API credentials</p>
+                  <p className="text-sm text-neutral-400 mt-1">Connect your cloud account with API credentials so SDK workflows can run on your infrastructure</p>
                 </div>
 
                 {!selectedProvider ? (
@@ -293,7 +299,7 @@ export default function CloudConnect() {
                       <button
                         key={key}
                         onClick={() => setSelectedProvider(key as any)}
-                        className="p-4 rounded-xl border border-white/10 hover:border-white/20 transition-colors text-left"
+                        className="p-4 rounded-2xl border border-white/10 hover:border-white/20 transition-colors text-left"
                       >
                         <div
                           className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
@@ -312,7 +318,7 @@ export default function CloudConnect() {
                       onClick={() => { setSelectedProvider(null); setFormData({}); }}
                       className="text-sm text-neutral-400 hover:text-white transition-colors"
                     >
-                      ← Back to providers
+                      {'<- Back to providers'}
                     </button>
 
                     <div className="flex items-center gap-3">
@@ -374,14 +380,14 @@ export default function CloudConnect() {
                     <div className="flex gap-3 pt-2">
                       <button
                         onClick={() => resetModalState()}
-                        className="flex-1 px-4 py-2.5 rounded-lg text-sm text-neutral-400 border border-white/10 hover:bg-white/5 transition-colors"
+                        className="flex-1 px-4 py-2.5 rounded-2xl text-sm text-neutral-400 border border-white/10 hover:bg-white/5 transition-colors"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={handleAdd}
                         disabled={isAdding}
-                        className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-neutral-900 hover:bg-neutral-200 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        className="flex-1 px-4 py-2.5 rounded-2xl text-sm font-medium bg-white text-neutral-900 hover:bg-neutral-200 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                       >
                         {isAdding ? (
                           <>

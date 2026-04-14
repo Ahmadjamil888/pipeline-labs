@@ -470,7 +470,7 @@ export class RunPodConnector implements ICloudConnector {
       }, 30000);
 
       if (!response.ok) {
-        return { success: false, error: 'Failed to execute command' };
+        return { success: false, exitCode: 1, error: 'Failed to execute command' };
       }
 
       const data = await response.json() as any;
@@ -481,7 +481,7 @@ export class RunPodConnector implements ICloudConnector {
         stderr: data.stderr || '',
       };
     } catch (err: any) {
-      return { success: false, error: err.message };
+      return { success: false, exitCode: 1, error: err.message };
     }
   }
 
@@ -499,7 +499,6 @@ export class RunPodConnector implements ICloudConnector {
         instanceType: data.machine?.gpuDisplayName || 'Unknown',
         ip: data.runtime?.ips?.publicIp,
         region: 'US',
-        gpuType: data.machine?.gpuDisplayName,
         status: data.desiredStatus === 'RUNNING' ? 'running' : 'pending',
       };
     } catch {
@@ -547,23 +546,5 @@ export class RunPodConnector implements ICloudConnector {
       'NVIDIA A100-SXM4-80GB': 1.64,
     };
     return costs[gpuTypeId] || 0.44;
-  }
-}
-
-// =====================================================
-// CONNECTOR FACTORY
-// =====================================================
-export function createConnector(config: CloudProviderConfig): ICloudConnector {
-  switch (config.provider) {
-    case 'aws':
-      return new AWSConnector(config);
-    case 'azure':
-      return new AzureConnector(config);
-    case 'gcp':
-      return new GCPConnector(config);
-    case 'runpod':
-      return new RunPodConnector(config);
-    default:
-      throw new Error(`Unsupported cloud provider: ${config.provider}`);
   }
 }

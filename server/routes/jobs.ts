@@ -1,17 +1,27 @@
 import { Router, Request, Response } from 'express';
 import { ExecutionEngine } from '../services/executor';
-import { createConnector } from '../services/cloud/index';
-import { createUserClient } from '../supabase';
+import { getAuth } from '../auth';
+import { supabaseAdmin } from '../supabase';
+import { unwrapStoredCredentials } from '../services/cloud/credentials';
+import { reconcileJobState } from '../services/jobState';
 
 export const jobsRouter = Router();
 
 // Active execution engines (in-memory for now, could use Redis for production)
 const activeEngines = new Map<string, ExecutionEngine>();
 
+async function syncPlanStatus(planId: string, userId: string, status: 'executing' | 'completed' | 'failed' | 'approved'): Promise<void> {
+  await supabaseAdmin
+    .from('training_plans')
+    .update({ status })
+    .eq('user_id', userId)
+    .eq('id', planId);
+}
+
 // Start a training job
 jobsRouter.post('/start', async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const auth = getAuth(req);
     const { planId, cloudProviderId } = req.body;
 
     if (!planId || !cloudProviderId) {
@@ -19,16 +29,13 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
       return;
     }
 
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
-    const client = createUserClient(accessToken);
-
     // Fetch training plan
-    const { data: plan, error: planError } = await client
+    const { data: plan, error: planError } = await supabaseAdmin
       .from('training_plans')
       .select('*')
       .eq('id', planId)
-      .eq('user_id', user.id)
-      .single();
+      .eq('user_id', auth.userId)
+      .maybeSingle();
 
     if (planError || !plan) {
       res.status(404).json({ error: 'Training plan not found' });
@@ -36,12 +43,12 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
     }
 
     // Fetch cloud provider
-    const { data: cloudProvider, error: cpError } = await client
+    const { data: cloudProvider, error: cpError } = await supabaseAdmin
       .from('cloud_providers')
       .select('*')
       .eq('id', cloudProviderId)
-      .eq('user_id', user.id)
-      .single();
+      .eq('user_id', auth.userId)
+      .maybeSingle();
 
     if (cpError || !cloudProvider) {
       res.status(404).json({ error: 'Cloud provider not found' });
@@ -49,11 +56,12 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
     }
 
     // Fetch dataset for storage path
-    const { data: dataset, error: datasetError } = await client
+    const { data: dataset, error: datasetError } = await supabaseAdmin
       .from('datasets')
       .select('storage_path')
       .eq('id', plan.dataset_id)
-      .single();
+      .eq('user_id', auth.userId)
+      .maybeSingle();
 
     if (datasetError || !dataset || !dataset.storage_path) {
       res.status(400).json({ error: 'Dataset or storage path not found' });
@@ -61,10 +69,10 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
     }
 
     // Create training job record
-    const { data: job, error: jobError } = await client
+    const { data: job, error: jobError } = await supabaseAdmin
       .from('training_jobs')
       .insert({
-        user_id: user.id,
+        user_id: auth.userId,
         plan_id: planId,
         dataset_id: plan.dataset_id,
         cloud_provider_id: cloudProviderId,
@@ -79,13 +87,10 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
     }
 
     // Update plan status
-    await client
-      .from('training_plans')
-      .update({ status: 'executing' })
-      .eq('id', planId);
+    await syncPlanStatus(planId, auth.userId, 'executing');
 
     // Generate a signed URL for the dataset
-    const { data: signedUrl, error: signedUrlError } = await client.storage
+    const { data: signedUrl, error: signedUrlError } = await supabaseAdmin.storage
       .from('datasets')
       .createSignedUrl(dataset.storage_path, 3600);
 
@@ -95,24 +100,25 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
     }
 
     const datasetUrl = signedUrl.signedUrl;
+    const decryptedCredentials = unwrapStoredCredentials(cloudProvider.credentials);
 
     // Start execution engine in background
     const engine = new ExecutionEngine(
       {
         cloudProvider: {
           provider: cloudProvider.provider,
-          credentials: cloudProvider.credentials,
-          region: cloudProvider.credentials?.region,
+          credentials: decryptedCredentials,
+          region: decryptedCredentials?.region,
         },
         plan: plan.plan,
         datasetPath: datasetUrl,
         jobId: job.id,
-        userId: user.id,
+        userId: auth.userId,
       },
       // Log callback - saves logs to DB
       async (logMessage: string) => {
         try {
-          await client.from('training_logs').insert({
+          await supabaseAdmin.from('training_logs').insert({
             job_id: job.id,
             level: logMessage.includes('ERROR') ? 'error' : 'info',
             message: logMessage,
@@ -134,28 +140,36 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
             failed: 'failed',
           };
 
-          await client
+          const jobUpdates: Record<string, unknown> = {
+            status: statusMap[status.phase] || status.phase,
+            error_message: status.phase === 'failed' ? status.message : null,
+            completed_at: status.phase === 'completed' ? new Date().toISOString() : null,
+          };
+
+          await supabaseAdmin
             .from('training_jobs')
-            .update({
-              status: statusMap[status.phase] || status.phase,
-              error_message: status.phase === 'failed' ? status.message : null,
-              completed_at: status.phase === 'completed' ? new Date().toISOString() : null,
-            })
-            .is('started_at', null)
+            .update(jobUpdates)
             .eq('id', job.id);
 
-          // Set started_at only once when transitioning from provisioning
           if (status.phase !== 'provisioning') {
-            await client
+            await supabaseAdmin
               .from('training_jobs')
               .update({ started_at: new Date().toISOString() })
               .is('started_at', null)
               .eq('id', job.id);
           }
 
+          if (status.phase === 'completed') {
+            await syncPlanStatus(planId, auth.userId, 'completed');
+          }
+
+          if (status.phase === 'failed') {
+            await syncPlanStatus(planId, auth.userId, 'failed');
+          }
+
           // Save metrics during training
           if (status.currentEpoch && status.phase === 'training') {
-            await client.from('training_metrics').insert({
+            await supabaseAdmin.from('training_metrics').insert({
               job_id: job.id,
               epoch: status.currentEpoch,
               step: 0,
@@ -177,13 +191,14 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
 
       // If completed, try to parse and save final metrics
       if (finalStatus.phase === 'completed') {
+        await syncPlanStatus(planId, auth.userId, 'completed');
         const metricsLine = finalStatus.logs.find(l => l.includes('METRICS:'));
         if (metricsLine) {
           try {
             const metricsJson = metricsLine.split('METRICS:')[1]?.trim();
             if (metricsJson) {
               const metrics = JSON.parse(metricsJson);
-              await client
+              await supabaseAdmin
                 .from('training_jobs')
                 .update({ final_metrics: metrics })
                 .eq('id', job.id);
@@ -198,7 +213,7 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
       activeEngines.delete(job.id);
       
       // Update job status to failed
-      await client
+      await supabaseAdmin
         .from('training_jobs')
         .update({
           status: 'failed',
@@ -206,6 +221,8 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
           completed_at: new Date().toISOString(),
         })
         .eq('id', job.id);
+
+      await syncPlanStatus(planId, auth.userId, 'failed');
     });
 
     res.json({ jobId: job.id, status: 'started' });
@@ -218,14 +235,12 @@ jobsRouter.post('/start', async (req: Request, res: Response) => {
 // List all training jobs
 jobsRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
-    const client = createUserClient(accessToken);
+    const auth = getAuth(req);
 
-    const { data, error } = await client
+    const { data, error } = await supabaseAdmin
       .from('training_jobs')
       .select('*, training_plans(plan, dataset_analysis, datasets(file_name)), cloud_providers(provider, label)')
-      .eq('user_id', user.id)
+      .eq('user_id', auth.userId)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -233,7 +248,8 @@ jobsRouter.get('/', async (req: Request, res: Response) => {
       return;
     }
 
-    res.json(data);
+    const reconciled = await Promise.all((data ?? []).map((job) => reconcileJobState(job)));
+    res.json(reconciled);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -242,23 +258,21 @@ jobsRouter.get('/', async (req: Request, res: Response) => {
 // Get a specific job
 jobsRouter.get('/:jobId', async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
-    const client = createUserClient(accessToken);
+    const auth = getAuth(req);
 
-    const { data, error } = await client
+    const { data, error } = await supabaseAdmin
       .from('training_jobs')
       .select('*, training_plans(plan, dataset_analysis, datasets(file_name)), cloud_providers(provider, label)')
       .eq('id', req.params.jobId)
-      .eq('user_id', user.id)
-      .single();
+      .eq('user_id', auth.userId)
+      .maybeSingle();
 
     if (error || !data) {
       res.status(404).json({ error: 'Job not found' });
       return;
     }
 
-    res.json(data);
+    res.json(await reconcileJobState(data));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -267,19 +281,17 @@ jobsRouter.get('/:jobId', async (req: Request, res: Response) => {
 // Cancel a running job
 jobsRouter.post('/:jobId/cancel', async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
-    const client = createUserClient(accessToken);
+    const auth = getAuth(req);
 
     const jobId = String(req.params.jobId);
 
     // Verify ownership first
-    const { data: job, error: jobError } = await client
+    const { data: job, error: jobError } = await supabaseAdmin
       .from('training_jobs')
-      .select('id')
+      .select('id, plan_id')
       .eq('id', jobId)
-      .eq('user_id', user.id)
-      .single();
+      .eq('user_id', auth.userId)
+      .maybeSingle();
 
     if (jobError || !job) {
       res.status(404).json({ error: 'Job not found' });
@@ -292,11 +304,15 @@ jobsRouter.post('/:jobId/cancel', async (req: Request, res: Response) => {
       activeEngines.delete(jobId);
     }
 
-    await client
+    await supabaseAdmin
       .from('training_jobs')
       .update({ status: 'cancelled', completed_at: new Date().toISOString() })
       .eq('id', jobId)
-      .eq('user_id', user.id);
+      .eq('user_id', auth.userId);
+
+    if (job.plan_id) {
+      await syncPlanStatus(job.plan_id, auth.userId, 'approved');
+    }
 
     res.json({ success: true });
   } catch (err: any) {

@@ -5,13 +5,17 @@
 import { supabase } from './supabase';
 
 const API_BASE = '/api';
+const API_KEY_STORAGE_KEY = 'pipeline_api_key';
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token || '';
+  const apiKey = typeof window !== 'undefined' ? window.localStorage.getItem(API_KEY_STORAGE_KEY) : null;
+
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(apiKey ? { 'x-api-key': apiKey } : {}),
   };
 }
 
@@ -49,6 +53,35 @@ async function apiCall(path: string, options: RequestInit = {}): Promise<any> {
     throw new Error(`Failed to parse response as JSON: ${text}`);
   }
 }
+
+export const authApi = {
+  me: () => apiCall('/auth/me'),
+
+  exportData: () => apiCall('/auth/export'),
+
+  listApiKeys: () => apiCall('/auth/api-keys'),
+
+  createApiKey: (name: string, expiresAt?: string) =>
+    apiCall('/auth/api-keys', {
+      method: 'POST',
+      body: JSON.stringify({ name, expiresAt }),
+    }),
+
+  revokeApiKey: (id: string) =>
+    apiCall(`/auth/api-keys/${id}`, { method: 'DELETE' }),
+
+  saveApiKey: (key: string) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(API_KEY_STORAGE_KEY, key);
+    }
+  },
+
+  clearSavedApiKey: () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(API_KEY_STORAGE_KEY);
+    }
+  },
+};
 
 // =====================================================
 // PLANNER API
@@ -134,4 +167,18 @@ export const monitoringApi = {
 
   getStatus: (jobId: string) =>
     apiCall(`/monitoring/${jobId}/status`),
+};
+
+export const aiApi = {
+  chat: (message: string, datasetId?: string, history?: Array<{ role: string; content: string }>) =>
+    apiCall('/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, datasetId, history }),
+    }),
+
+  reasonings: (columns: unknown[]) =>
+    apiCall('/ai/reasonings', {
+      method: 'POST',
+      body: JSON.stringify({ columns }),
+    }),
 };

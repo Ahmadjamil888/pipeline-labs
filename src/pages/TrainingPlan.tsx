@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { plannerApi, cloudApi, jobsApi } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -112,23 +111,22 @@ export default function TrainingPlanPage() {
       toast.error('No training plan selected');
       return;
     }
-    if (!selectedCloudId && plan?.gpu_required !== 'none') {
-      toast.error('Please select a cloud provider to run GPU training');
+    if (!selectedCloudId) {
+      toast.error('Select a cloud provider before starting training');
       return;
     }
 
     // Validate plan parameters before starting
-    if (plan?.plan) {
-      const p = plan.plan;
-      if (p.epochs < 1 || p.epochs > 100) {
+    if (plan) {
+      if (plan.epochs < 1 || plan.epochs > 100) {
         toast.error('Epochs must be between 1 and 100');
         return;
       }
-      if (p.batch_size < 1 || p.batch_size > 256) {
+      if (plan.batch_size < 1 || plan.batch_size > 256) {
         toast.error('Batch size must be between 1 and 256');
         return;
       }
-      if (p.learning_rate < 0 || p.learning_rate > 1) {
+      if (plan.learning_rate < 0 || plan.learning_rate > 1) {
         toast.error('Learning rate must be between 0 and 1');
         return;
       }
@@ -142,12 +140,11 @@ export default function TrainingPlanPage() {
       return;
     }
 
-    // If no GPU needed, we can still start the job (will run locally/serverless)
     setIsStarting(true);
     try {
-      const result = await jobsApi.start(planId, selectedCloudId || '');
+      const result = await jobsApi.start(planId, selectedCloudId);
       toast.success('Training job started!');
-      navigate(`/dashboard/monitor?job=${result.jobId}`);
+      navigate(`/dashboard/jobs?job=${result.jobId}`);
     } catch (err: any) {
       toast.error(err.message || 'Failed to start training');
       // Revert status on failure
@@ -181,17 +178,25 @@ export default function TrainingPlanPage() {
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
         <div>
           <h2 className="text-3xl font-light text-white tracking-tight">AI Training Planner</h2>
-          <p className="text-neutral-400 mt-1">AI analyzes your dataset and generates an optimal training plan</p>
+          <p className="text-neutral-400 mt-1">Generate an SDK-ready training workflow that runs on customer-owned cloud and storage.</p>
+        </div>
+        <div className="bg-[#1c1b1b] rounded-2xl p-5 border border-white/5">
+          <p className="text-xs text-neutral-500 uppercase tracking-wider mb-3">MVP Workflow</p>
+          <div className="space-y-3 text-sm text-neutral-300">
+            <div className="rounded-2xl border border-white/5 bg-neutral-900/40 px-4 py-3">1. Analyze dataset and generate a plan</div>
+            <div className="rounded-2xl border border-white/5 bg-neutral-900/40 px-4 py-3">2. Review or edit the training parameters</div>
+            <div className="rounded-2xl border border-white/5 bg-neutral-900/40 px-4 py-3">3. Launch through the SDK onto connected cloud and storage</div>
+          </div>
         </div>
       </div>
 
       {/* Step 1: Analyze Dataset */}
       {!analysis && (
         <div className="space-y-6">
-          <div className="bg-[#1c1b1b] rounded-xl p-8 border border-white/5 text-center">
+          <div className="bg-[#1c1b1b] rounded-2xl p-8 border border-white/5 text-center">
             <div className="w-16 h-16 rounded-2xl bg-[#d5c5a6]/10 flex items-center justify-center mx-auto mb-6">
               <Brain className="w-8 h-8 text-[#d5c5a6]" />
             </div>
@@ -222,7 +227,7 @@ export default function TrainingPlanPage() {
                 <button
                   onClick={handleAnalyze}
                   disabled={isAnalyzing}
-                  className="bg-white text-neutral-900 px-6 py-3 rounded-full font-bold text-sm hover:scale-105 transition-transform disabled:opacity-50 flex items-center gap-2 mx-auto"
+                  className="bg-white text-neutral-900 px-6 py-3 rounded-2xl font-bold text-sm hover:scale-105 transition-transform disabled:opacity-50 flex items-center gap-2 mx-auto"
                 >
                   {isAnalyzing ? (
                     <>
@@ -251,7 +256,7 @@ export default function TrainingPlanPage() {
             className="space-y-6"
           >
             {/* Analysis Summary */}
-            <div className="bg-[#1c1b1b] rounded-xl p-6 border border-white/5">
+            <div className="bg-[#1c1b1b] rounded-2xl p-6 border border-white/5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-medium text-white flex items-center gap-2">
                   <Database className="w-5 h-5 text-[#d5c5a6]" />
@@ -269,7 +274,7 @@ export default function TrainingPlanPage() {
                 </div>
                 <div className="bg-neutral-900/50 rounded-lg p-3">
                   <p className="text-xs text-neutral-500 uppercase">Rows × Columns</p>
-                  <p className="text-sm text-white font-medium">{analysis.row_count} × {analysis.column_count}</p>
+                  <p className="text-sm text-white font-medium">{analysis.row_count} x {analysis.column_count}</p>
                 </div>
                 <div className="bg-neutral-900/50 rounded-lg p-3">
                   <p className="text-xs text-neutral-500 uppercase">Label Column</p>
@@ -309,7 +314,7 @@ export default function TrainingPlanPage() {
             </div>
 
             {/* Training Plan */}
-            <div className="bg-[#1c1b1b] rounded-xl p-6 border border-white/5">
+            <div className="bg-[#1c1b1b] rounded-2xl p-6 border border-white/5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-medium text-white flex items-center gap-2">
                   <Settings2 className="w-5 h-5 text-[#d5c5a6]" />
@@ -428,7 +433,7 @@ export default function TrainingPlanPage() {
                     <div className="col-span-2 md:col-span-3">
                       <button
                         onClick={handleSavePlan}
-                        className="px-4 py-2 rounded-lg text-sm font-medium bg-white text-neutral-900 hover:bg-neutral-200 transition-colors flex items-center gap-2"
+                        className="px-4 py-2 rounded-2xl text-sm font-medium bg-white text-neutral-900 hover:bg-neutral-200 transition-colors flex items-center gap-2"
                       >
                         <Save className="w-4 h-4" />
                         Save Changes
@@ -481,23 +486,29 @@ export default function TrainingPlanPage() {
             </div>
 
             {/* Step 3: Select Cloud & Start */}
-            <div className="bg-[#1c1b1b] rounded-xl p-6 border border-white/5">
+            <div className="bg-[#1c1b1b] rounded-2xl p-6 border border-white/5">
               <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
                 <Play className="w-5 h-5 text-[#d5c5a6]" />
                 Launch Training
               </h3>
 
-              {plan.gpu_required !== 'none' && cloudProviders.length === 0 && (
+              <div className="mb-4 rounded-2xl border border-white/5 bg-neutral-900/40 px-4 py-4">
+                <p className="text-sm text-neutral-300">
+                  Users connect their own cloud and storage. Pipeline Labs validates access, prepares the workflow, and executes against customer-owned infrastructure through the SDK contract.
+                </p>
+              </div>
+
+              {cloudProviders.length === 0 && (
                 <div className="mb-4 p-4 rounded-lg bg-yellow-500/5 border border-yellow-500/10">
                   <p className="text-sm text-yellow-400 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4" />
-                    This plan requires a GPU. Connect a cloud provider first.
+                    Connect a cloud provider before starting a training run.
                   </p>
                   <button
                     onClick={() => navigate('/dashboard/cloud')}
                     className="mt-2 text-sm text-[#d5c5a6] hover:underline"
                   >
-                    Go to Cloud Connect →
+                    {'Go to Cloud Connect ->'}
                   </button>
                 </div>
               )}
@@ -512,7 +523,7 @@ export default function TrainingPlanPage() {
                       <button
                         key={cp.id}
                         onClick={() => setSelectedCloudId(cp.id)}
-                        className={`p-4 rounded-xl border text-left transition-colors ${
+                        className={`p-4 rounded-2xl border text-left transition-colors ${
                           selectedCloudId === cp.id
                             ? 'border-[#d5c5a6] bg-[#d5c5a6]/5'
                             : 'border-white/10 hover:border-white/20'
@@ -528,8 +539,8 @@ export default function TrainingPlanPage() {
 
               <button
                 onClick={handleApproveAndTrain}
-                disabled={isStarting || (plan.gpu_required !== 'none' && !selectedCloudId)}
-                className="w-full bg-white text-neutral-900 px-6 py-3 rounded-xl font-bold text-sm hover:scale-[1.02] transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                disabled={isStarting || !selectedCloudId}
+                className="w-full bg-white text-neutral-900 px-6 py-3 rounded-2xl font-bold text-sm hover:scale-[1.02] transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isStarting ? (
                   <>
@@ -550,7 +561,7 @@ export default function TrainingPlanPage() {
               onClick={() => { setAnalysis(null); setPlan(null); setPlanId(null); }}
               className="text-sm text-neutral-500 hover:text-white transition-colors"
             >
-              ← Re-analyze with different objective
+              {'<- Re-analyze with different objective'}
             </button>
           </motion.div>
         </AnimatePresence>

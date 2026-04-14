@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { monitoringApi, jobsApi } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { motion } from 'framer-motion';
 import {
   Activity, Loader2, CheckCircle2, AlertCircle, XCircle,
   Clock, Cpu, TrendingUp, ScrollText, RefreshCw, StopCircle,
@@ -77,7 +75,7 @@ export default function MonitorPage() {
       ]);
       setLogs(logsData || []);
       setMetrics(metricsData || {});
-      setSelectedJob(statusData);
+      setSelectedJob((prev) => (prev?.id === id ? { ...prev, ...statusData } : statusData));
     } catch (err) {
       console.error('Failed to load job details:', err);
     }
@@ -117,7 +115,7 @@ export default function MonitorPage() {
   };
 
   const formatDuration = (start: string | null, end: string | null) => {
-    if (!start) return '—';
+    if (!start) return '-';
     const s = new Date(start).getTime();
     const e = end ? new Date(end).getTime() : Date.now();
     const diffMin = Math.floor((e - s) / 60000);
@@ -135,19 +133,12 @@ export default function MonitorPage() {
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px] xl:items-start">
         <div>
           <h2 className="text-3xl font-light text-white tracking-tight">Training Monitor</h2>
           <p className="text-neutral-400 mt-1">Monitor your ML training jobs in real-time</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => { loadJobs(); if (selectedJob?.id) loadJobDetails(selectedJob.id); }}
-            className="p-2 text-neutral-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-            title="Refresh"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
+        <div className="bg-[#1c1b1b] rounded-2xl border border-white/5 p-4 flex items-center justify-between gap-3">
           <label className="flex items-center gap-2 text-sm text-neutral-400">
             <input
               type="checkbox"
@@ -157,21 +148,33 @@ export default function MonitorPage() {
             />
             Auto-refresh
           </label>
+          <button
+            onClick={() => { loadJobs(); if (selectedJob?.id) loadJobDetails(selectedJob.id); }}
+            className="px-4 py-2 text-neutral-300 hover:text-white hover:bg-white/5 rounded-2xl transition-colors flex items-center gap-2"
+            title="Refresh"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
         </div>
       </div>
 
-      <div className="flex gap-6">
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         {/* Jobs List */}
-        <div className="w-72 shrink-0 space-y-2">
+        <div className="space-y-3">
+          <div className="bg-[#1c1b1b] rounded-2xl border border-white/5 p-4">
+            <p className="text-xs text-neutral-500 uppercase tracking-wider mb-2">Jobs Queue</p>
+            <p className="text-sm text-neutral-300">Inspect running and completed jobs, then drill into logs and metrics without leaving the dashboard.</p>
+          </div>
           {jobs.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="text-center py-12 bg-[#1c1b1b] rounded-2xl border border-white/5">
               <Activity className="w-10 h-10 text-neutral-600 mx-auto mb-3" />
               <p className="text-neutral-400 text-sm">No training jobs yet</p>
               <button
                 onClick={() => navigate('/dashboard/train')}
                 className="mt-3 text-sm text-[#d5c5a6] hover:underline"
               >
-                Create a training plan →
+                {'Create a training plan ->'}
               </button>
             </div>
           ) : (
@@ -181,7 +184,7 @@ export default function MonitorPage() {
                 <button
                   key={job.id}
                   onClick={() => setSelectedJob(job)}
-                  className={`w-full p-4 rounded-xl border text-left transition-colors ${
+                  className={`w-full p-4 rounded-2xl border text-left transition-colors ${
                     selectedJob?.id === job.id
                       ? 'border-[#d5c5a6] bg-[#d5c5a6]/5'
                       : 'border-white/5 bg-[#1c1b1b] hover:border-white/10'
@@ -200,7 +203,7 @@ export default function MonitorPage() {
                     {job.training_plans?.datasets?.file_name || 'Training Job'}
                   </p>
                   <p className="text-xs text-neutral-500 mt-0.5">
-                    {job.training_plans?.plan?.model || '—'} • {job.cloud_providers?.provider?.toUpperCase() || 'Local'}
+                    {job.training_plans?.plan?.model || '-'} • {job.cloud_providers?.provider?.toUpperCase() || 'Cloud'}
                   </p>
                 </button>
               );
@@ -217,7 +220,7 @@ export default function MonitorPage() {
           ) : (
             <>
               {/* Job Header */}
-              <div className="bg-[#1c1b1b] rounded-xl p-5 border border-white/5">
+              <div className="bg-[#1c1b1b] rounded-2xl p-5 border border-white/5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Link to="/dashboard/jobs" className="p-1 text-neutral-400 hover:text-white">
@@ -228,7 +231,7 @@ export default function MonitorPage() {
                         {selectedJob.training_plans?.datasets?.file_name || 'Training Job'}
                       </h3>
                       <p className="text-xs text-neutral-500">
-                        {selectedJob.training_plans?.plan?.model} • {selectedJob.instance_type || '—'} • {selectedJob.instance_region || '—'}
+                        {selectedJob.training_plans?.plan?.model || 'Unknown model'} • {selectedJob.instance_type || '-'} • {selectedJob.instance_region || '-'}
                       </p>
                     </div>
                   </div>
@@ -278,7 +281,7 @@ export default function MonitorPage() {
 
               {/* Metrics Chart */}
               {Object.keys(metrics).length > 0 && (
-                <div className="bg-[#1c1b1b] rounded-xl p-5 border border-white/5">
+                <div className="bg-[#1c1b1b] rounded-2xl p-5 border border-white/5">
                   <h4 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
                     <BarChart3 className="w-4 h-4 text-[#d5c5a6]" />
                     Training Metrics
@@ -314,7 +317,7 @@ export default function MonitorPage() {
               )}
 
               {/* Logs */}
-              <div className="bg-[#1c1b1b] rounded-xl border border-white/5 overflow-hidden">
+              <div className="bg-[#1c1b1b] rounded-2xl border border-white/5 overflow-hidden">
                 <div className="p-4 border-b border-white/5 flex items-center justify-between">
                   <h4 className="text-sm font-medium text-white flex items-center gap-2">
                     <ScrollText className="w-4 h-4 text-[#d5c5a6]" />

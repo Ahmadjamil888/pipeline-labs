@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { analyzeDataset, generateTrainingPlan, aiEnhancedPlan } from '../services/planner';
-import { supabaseAdmin, createUserClient } from '../supabase';
+import { analyzeDataset, aiEnhancedPlan } from '../services/planner';
+import { getAuth } from '../auth';
+import { supabaseAdmin } from '../supabase';
 import Papa from 'papaparse';
 
 export const plannerRouter = Router();
@@ -8,11 +9,7 @@ export const plannerRouter = Router();
 // Analyze a dataset and generate a training plan
 plannerRouter.post('/analyze', async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
-    if (!user || !user.id) {
-      res.status(401).json({ error: 'Unauthenticated' });
-      return;
-    }
+    const auth = getAuth(req);
     const { datasetId, userObjective } = req.body;
 
     if (!datasetId) {
@@ -21,14 +18,12 @@ plannerRouter.post('/analyze', async (req: Request, res: Response) => {
     }
 
     // Fetch dataset from Supabase
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
-    const client = createUserClient(accessToken);
-
-    const { data: dataset, error: dsError } = await client
+    const { data: dataset, error: dsError } = await supabaseAdmin
       .from('datasets')
       .select('*')
       .eq('id', datasetId)
-      .single();
+      .eq('user_id', auth.userId)
+      .maybeSingle();
 
     if (dsError || !dataset) {
       res.status(404).json({ error: 'Dataset not found' });
@@ -36,7 +31,7 @@ plannerRouter.post('/analyze', async (req: Request, res: Response) => {
     }
 
     // Download dataset from storage
-    const { data: storageData, error: storageError } = await client.storage
+    const { data: storageData, error: storageError } = await supabaseAdmin.storage
       .from('datasets')
       .download(dataset.storage_path);
 
@@ -70,10 +65,10 @@ plannerRouter.post('/analyze', async (req: Request, res: Response) => {
     const plan = await aiEnhancedPlan(analysis, data.slice(0, 10), userObjective, geminiKey);
 
     // Save to database
-    const { data: planRecord, error: planError } = await client
+    const { data: planRecord, error: planError } = await supabaseAdmin
       .from('training_plans')
       .insert({
-        user_id: user.id,
+        user_id: auth.userId,
         dataset_id: datasetId,
         plan,
         dataset_analysis: analysis,
@@ -88,7 +83,7 @@ plannerRouter.post('/analyze', async (req: Request, res: Response) => {
     }
 
     // Update dataset with detected info
-    const { error: updateError } = await client
+    const { error: updateError } = await supabaseAdmin
       .from('datasets')
       .update({
         data_type: analysis.data_type,
@@ -116,14 +111,14 @@ plannerRouter.post('/analyze', async (req: Request, res: Response) => {
 // Get an existing training plan
 plannerRouter.get('/:planId', async (req: Request, res: Response) => {
   try {
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
-    const client = createUserClient(accessToken);
+    const auth = getAuth(req);
 
-    const { data, error } = await client
+    const { data, error } = await supabaseAdmin
       .from('training_plans')
       .select('*')
       .eq('id', req.params.planId)
-      .single();
+      .eq('user_id', auth.userId)
+      .maybeSingle();
 
     if (error || !data) {
       res.status(404).json({ error: 'Plan not found' });
@@ -139,8 +134,7 @@ plannerRouter.get('/:planId', async (req: Request, res: Response) => {
 // Update a training plan (user modifies before approving)
 plannerRouter.patch('/:planId', async (req: Request, res: Response) => {
   try {
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
-    const client = createUserClient(accessToken);
+    const auth = getAuth(req);
 
     const { plan, status } = req.body;
 
@@ -148,15 +142,16 @@ plannerRouter.patch('/:planId', async (req: Request, res: Response) => {
     if (plan) updates.plan = plan;
     if (status) updates.status = status;
 
-    const { data, error } = await client
+    const { data, error } = await supabaseAdmin
       .from('training_plans')
       .update(updates)
       .eq('id', req.params.planId)
+      .eq('user_id', auth.userId)
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error) {
-      res.status(400).json({ error: error.message });
+    if (error || !data) {
+      res.status(400).json({ error: error?.message || 'Plan not found' });
       return;
     }
 
@@ -169,18 +164,12 @@ plannerRouter.patch('/:planId', async (req: Request, res: Response) => {
 // List all training plans for user
 plannerRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
-    if (!user || !user.id) {
-      res.status(401).json({ error: 'Unauthenticated' });
-      return;
-    }
-    const accessToken = req.headers.authorization?.split(' ')[1] || '';
-    const client = createUserClient(accessToken);
+    const auth = getAuth(req);
 
-    const { data, error } = await client
+    const { data, error } = await supabaseAdmin
       .from('training_plans')
       .select('*, datasets(file_name, row_count, column_count)')
-      .eq('user_id', user.id)
+      .eq('user_id', auth.userId)
       .order('created_at', { ascending: false });
 
     if (error) {

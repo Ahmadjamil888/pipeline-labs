@@ -1,3 +1,5 @@
+import { generateGeminiText } from './gemini';
+
 // =====================================================
 // AI PLANNER LAYER
 // Analyzes datasets and generates structured training plans.
@@ -459,32 +461,12 @@ Generate a JSON training plan with these fields:
 
 Return ONLY the JSON, no other text.`;
 
-    // Fetch with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
-          }),
-        }
+      const text = await generateGeminiText(
+        'You are an expert ML engineer. Return only valid JSON.',
+        prompt,
+        geminiApiKey
       );
-      
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`);
-      }
-
-      const result = await response.json() as any;
-      const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
       // Extract JSON from response
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -511,14 +493,12 @@ Return ONLY the JSON, no other text.`;
         return { ...basePlan, ...sanitizedPlan };
       }
     } catch (err) {
-      clearTimeout(timeoutId);
-      if (err instanceof Error && err.name === 'AbortError') {
-        console.error('[AI Planner] Gemini request timed out, using rule-based plan');
-      } else {
-        console.error('[AI Planner] Gemini call failed, using rule-based plan:', err);
-      }
+      console.error('[AI Planner] Gemini call failed, using rule-based plan:', err);
     }
 
+    return basePlan;
+  } catch (err) {
+    console.error('[AI Planner] Unexpected planning failure, using rule-based plan:', err);
     return basePlan;
   }
 }

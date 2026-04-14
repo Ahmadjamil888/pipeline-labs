@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { aiApi } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
@@ -65,9 +66,9 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const text = await file.text();
       const isJSON = file.name.endsWith('.json');
       const rawData = isJSON ? parseJSON(text) : parseCSV(text);
-      
+
       const filePath = `${user.id}/${Date.now()}_${file.name}`;
-      
+
       const { error: uploadError } = await supabase.storage
         .from('datasets')
         .upload(filePath, file, {
@@ -117,7 +118,7 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const columns = analyzeColumns(dataset.currentData);
       setDataset(prev => ({ ...prev, columns }));
       setStep('explore');
-      
+
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: `Analysis complete. I see ${columns.length} columns. What shall we explore first? I can generate stats, or we can try some "what if" scenarios.`
@@ -132,8 +133,7 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       toast.error('No dataset loaded');
       return;
     }
-    
-    // Save to database
+
     const { data: versionRecord, error: versionError } = await supabase
       .from('dataset_versions')
       .insert({
@@ -143,13 +143,13 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       })
       .select()
       .single();
-    
+
     if (versionError) {
       console.error('Failed to save version:', versionError);
       toast.error('Failed to save version');
       return;
     }
-    
+
     const newVersion: DatasetVersion = {
       id: versionRecord.id,
       dataset_id: datasetId,
@@ -157,7 +157,7 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       change_summary: summary,
       created_at: versionRecord.created_at,
     };
-    
+
     setDataset(prev => ({
       ...prev,
       versions: [...prev.versions, newVersion]
@@ -169,14 +169,14 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       toast.error('No versions to undo');
       return;
     }
-    
+
     const lastVersion = dataset.versions[dataset.versions.length - 1];
     setDataset(prev => ({
       ...prev,
       currentData: lastVersion.version_data,
       versions: prev.versions.slice(0, -1)
     }));
-    
+
     setMessages(prev => [...prev, {
       role: 'assistant',
       content: `Reverted changes: ${lastVersion.change_summary}`
@@ -201,20 +201,19 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         .select('*')
         .eq('id', id)
         .single();
-      
+
       if (error) throw error;
-      
-      // Fetch full data from storage
+
       const { data: storageData, error: storageError } = await supabase.storage
         .from('datasets')
         .download(ds.storage_path);
-        
+
       if (storageError) throw storageError;
-      
+
       const text = await storageData.text();
       const isJSON = ds.storage_path.endsWith('.json');
       const rawData = isJSON ? parseJSON(text) : parseCSV(text);
-      
+
       setFileName(ds.file_name);
       setDatasetId(ds.id);
       setDataset({
@@ -245,76 +244,33 @@ export const PipelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const sendMessage = useCallback(async (content: string) => {
     setMessages(prev => [...prev, { role: 'user', content }]);
     setIsProcessing(true);
-    
+
     try {
-      const context = `
-Dataset Preview: ${JSON.stringify(dataset.currentData.slice(0, 5))}
-Columns: ${JSON.stringify(dataset.columns.map(c => ({ name: c.name, type: c.type, nullCount: c.nullCount })))}
-Current Step: ${step}
-      `;
-
-      const response = await supabase.functions.invoke('ai-inference', {
-        body: {
-          prompt: `${context}\n\nUser Question: ${content}`,
-          stream: true
-        }
-      });
-
-      if (!response.data) throw new Error('No data from AI');
-
-      // Helper for streaming
-      const reader = response.data.getReader();
-      const decoder = new TextDecoder();
-      let assistantMsg = '';
-      
       setMessages(prev => [...prev, { role: 'assistant', content: '', isThinking: true }]);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.substring(6));
-              const text = data.choices[0]?.delta?.content || '';
-              assistantMsg += text;
-              
-              setMessages(prev => {
-                const last = prev[prev.length - 1];
-                return [...prev.slice(0, -1), { 
-                  ...last, 
-                  content: assistantMsg,
-                  isThinking: true 
-                }];
-              });
-            } catch (e) { /* partial json */ }
-          }
+      const history = messages.slice(-8).map((message) => ({
+        role: message.role,
+        content: message.content,
+      }));
+      const response = await aiApi.chat(content, datasetId || undefined, history);
+      const assistantMsg = String(response?.content || '');
+
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        return [...prev.slice(0, -1), { ...last, content: assistantMsg, isThinking: false }];
+      });
+
+      const transformMatch = assistantMsg.match(/<transform>([\s\S]*?)<\/transform>/);
+      if (transformMatch) {
+        try {
+          const transformConfig = JSON.parse(transformMatch[1]);
+          const transformed = executeTransform(dataset.currentData, transformConfig);
+          await applyTransform(transformed, transformConfig.description || `AI: ${transformConfig.action}`);
+        } catch (e) {
+          console.error('Failed to apply transform', e);
         }
       }
 
-      // Stream complete — stop thinking indicator
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        return [...prev.slice(0, -1), { ...last, isThinking: false }];
-      });
-
-      // Check for transform blocks
-      const transformMatch = assistantMsg.match(/<transform>([\s\S]*?)<\/transform>/);
-      if (transformMatch) {
-         try {
-           const transformConfig = JSON.parse(transformMatch[1]);
-           const transformed = executeTransform(dataset.currentData, transformConfig);
-           await applyTransform(transformed, transformConfig.description || `AI: ${transformConfig.action}`);
-         } catch (e) {
-           console.error('Failed to apply transform', e);
-         }
-      }
-
-      // Check for chart blocks in the final message
       const chartMatch = assistantMsg.match(/<chart>([\s\S]*?)<\/chart>/);
       if (chartMatch) {
         try {
@@ -327,14 +283,20 @@ Current Step: ${step}
           console.error('Failed to parse chart JSON', e);
         }
       }
-
     } catch (error: any) {
       console.error('Chat error:', error);
-      toast.error('AI failed to respond');
+      toast.error(error.message || 'AI failed to respond');
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (!last || last.role !== 'assistant') {
+          return prev;
+        }
+        return [...prev.slice(0, -1), { ...last, content: 'AI failed to respond.', isThinking: false }];
+      });
     } finally {
       setIsProcessing(false);
     }
-  }, [dataset.currentData, dataset.columns, step]);
+  }, [applyTransform, dataset.currentData, datasetId, messages]);
 
   return (
     <PipelineContext.Provider value={{

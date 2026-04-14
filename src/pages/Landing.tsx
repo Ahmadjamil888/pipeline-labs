@@ -283,8 +283,8 @@ function Nav({ theme, toggleTheme }: { theme: Theme; toggleTheme: () => void }) 
   }, []);
 
   const navItems = [
-    { label: "Product", href: "#product" },
-    { label: "How it works", href: "#how-it-works" },
+    { label: "Platform", href: "#product" },
+    { label: "Workflow", href: "#how-it-works" },
     { label: "Blog", href: "#blog" },
     { label: "Pricing", href: "#pricing" },
     { label: "Documentation", href: "https://pipeline.stldocs.app", external: true },
@@ -1213,7 +1213,7 @@ function HowItWorks() {
     <section style={{ padding: "96px 44px", maxWidth: 1200, margin: "0 auto" }}>
       <div style={{ textAlign: "center", marginBottom: 52 }}>
         <Eyebrow>Process</Eyebrow>
-        <SectionTitle style={{ margin: "0 auto 12px" }}>From raw sources to production-grade ML datasets</SectionTitle>
+        <SectionTitle style={{ margin: "0 auto 12px" }}>From cloud credentials to production-grade LLM training workflows</SectionTitle>
       </div>
       <div style={{
         display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
@@ -1242,32 +1242,39 @@ function HowItWorks() {
    SDK CODE EDITOR SECTION
 ───────────────────────────────────────────── */
 
-const DEFAULT_CODE = `from pipeline_labs import DataProcessor
+const DEFAULT_CODE = `from pipeline_labs import PipelineLabs
 
 # Initialize with your API key
-client = DataProcessor(PIPELINE_API_KEY="your_api_key")
+client = PipelineLabs(api_key="plk_live_your_key")
 
-# Upload a dataset
-dataset = client.datasets.upload("customer_data.csv")
+# Register customer-owned cloud credentials once
+cloud = client.cloud.connect(
+    provider="aws",
+    label="prod-trainers",
+    credentials={
+        "access_key_id": "...",
+        "secret_access_key": "...",
+        "region": "us-east-1",
+    },
+)
 
-# Process with natural language
-processed = client.process(
+# Upload training data and generate a plan
+dataset = client.datasets.upload("support_finetune.jsonl")
+plan = client.training.analyze(
     dataset_id=dataset.id,
-    instructions="""Normalize numeric features, 
-        encode categorical variables,
-        remove outliers using z-score"""
+    user_objective="prepare this dataset for supervised LLM fine-tuning"
 )
 
-# Download the clean dataset
-client.datasets.download(
-    processed.id, 
-    format="csv",
-    output_path="clean_data.csv"
+# Launch on infrastructure the customer owns
+job = client.jobs.start(
+    plan_id=plan.planId,
+    cloud_provider_id=cloud.id,
 )
 
-# Or get a preview of the results
-preview = client.datasets.preview(processed.id, rows=10)
-print(f"Processed {preview.row_count} rows, {preview.column_count} columns")
+# Pull status, logs, and a full account export for sync jobs
+status = client.monitoring.get_status(job.jobId)
+snapshot = client.auth.export_data()
+print(status["status"], len(snapshot["datasets"]))
 `;
 
 type Token = { type: string; value: string };
@@ -1410,9 +1417,9 @@ function SDKSection() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 60, alignItems: "flex-start", marginBottom: 44 }}>
           <div>
             <Eyebrow>SDK</Eyebrow>
-            <SectionTitle>Integrate in minutes,<br />operationalize data workflows</SectionTitle>
+            <SectionTitle>Integrate in minutes,<br />run SDK-first training ops</SectionTitle>
             <SubText style={{ marginBottom: 28 }}>
-              Pipeline Labs ships a first-class Python SDK. Authenticate once, then orchestrate dataset ingestion, processing jobs, previews, downloads, and validation directly from your notebooks, apps, or CI pipelines.
+              Pipeline Labs ships a first-class Python SDK. Authenticate once, connect customer-owned cloud, then orchestrate dataset prep, training plans, live jobs, storage, and exports from notebooks, apps, or CI.
             </SubText>
             <div style={{ display: "flex", gap: 10 }}>
               <a
@@ -1640,8 +1647,8 @@ function Features() {
   return (
     <section id="product" style={{ padding: "96px 44px", maxWidth: 1200, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 48, gap: 32, flexWrap: "wrap" }}>
-        <div><Eyebrow>Features</Eyebrow><SectionTitle>AI data infrastructure,<br />built for machine learning</SectionTitle></div>
-        <SubText>From ingestion to validated export, Pipeline Labs gives ML teams a repeatable system for turning messy data into production-ready training assets.</SubText>
+        <div><Eyebrow>Features</Eyebrow><SectionTitle>SDK-first orchestration,<br />built for LLM training teams</SectionTitle></div>
+        <SubText>From dataset prep to training plans and cloud execution, Pipeline Labs gives teams a clean SDK surface for running ML workflows on infrastructure they already own.</SubText>
       </div>
       <div style={{
         display: "grid", gridTemplateColumns: "repeat(2, 1fr)",
@@ -1793,8 +1800,8 @@ function Pricing() {
     }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "96px 44px", textAlign: "center" }}>
         <Eyebrow>Pricing</Eyebrow>
-        <SectionTitle style={{ margin: "0 auto 12px" }}>Pricing for teams building data leverage</SectionTitle>
-        <SubText style={{ margin: "0 auto 32px" }}>Start with a single workflow. Scale into shared infrastructure as your dataset volume and model complexity grow.</SubText>
+        <SectionTitle style={{ margin: "0 auto 12px" }}>Pricing for teams shipping LLM workflows</SectionTitle>
+        <SubText style={{ margin: "0 auto 32px" }}>Start with one SDK integration, then scale into shared automation for training, storage, evaluation, and deployment ops.</SubText>
 
         <div style={{
           display: "inline-flex", alignItems: "center",
@@ -2086,10 +2093,10 @@ function CTABanner() {
     }}>
       <Divider style={{ marginBottom: 52 }} />
       <h2 style={{ fontSize: "clamp(28px, 3.8vw, 44px)", fontWeight: 300, letterSpacing: "-0.04em", color: "var(--text)", marginBottom: 14, fontFamily: T.font }}>
-        Build the data layer your models deserve.
+        Build the training control plane your models deserve.
       </h2>
       <p style={{ fontSize: 16, color: "var(--text2)", marginBottom: 36, maxWidth: 480, margin: "0 auto 36px", fontFamily: T.font }}>
-        Join thousands of data scientists who've automated their preprocessing — and spend more time on what actually matters.
+        Connect your cloud, call the SDK, and let Pipeline Labs orchestrate training workflows without owning your infrastructure.
       </p>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
         <Link to="/dashboard" style={{
@@ -2153,7 +2160,7 @@ function Footer({ theme }: { theme: Theme }) {
           <div>
             <img src={logoSrc} alt="Pipeline Labs" style={{ height: 26, objectFit: "contain" }} />
             <p style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.65, maxWidth: 240, marginBottom: 22, marginTop: 14 }}>
-              AI data infrastructure for transforming raw datasets into validated, training-ready assets and repeatable ML workflows.
+              SDK-first infrastructure for automating LLM training, storage, and evaluation workflows on customer-owned cloud.
             </p>
             <div style={{ display: "flex", gap: 8 }}>
               {[

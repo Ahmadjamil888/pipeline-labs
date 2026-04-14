@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Trash2 } from 'lucide-react'
+import { Copy, Download, Trash2 } from 'lucide-react'
 import { AICleanPage as AIDataScientist } from '@/components/AICleanPage'
 import { usePipeline } from '@/context/PipelineContext'
 import { useNavigate, useLocation, Routes, Route, Link } from 'react-router-dom'
@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { toast } from 'sonner'
 import { parseCSV, parseJSON, analyzeColumns, cleanData, transformData } from '@/lib/dataProcessing'
+import { authApi } from '@/lib/api'
 import CloudConnect from './CloudConnect'
 import TrainingPlanPage from './TrainingPlan'
 import MonitorPage from './Monitor'
@@ -47,6 +48,199 @@ interface Profile {
   email: string | null
   avatar_url: string | null
   created_at: string | null
+}
+
+interface ApiKeyRecord {
+  id: string
+  name: string
+  key_prefix: string
+  last4: string
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+  expires_at: string | null
+}
+
+function SDKAccessPanel() {
+  const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>([])
+  const [newKeyName, setNewKeyName] = useState('Primary SDK Key')
+  const [latestIssuedKey, setLatestIssuedKey] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isCreating, setIsCreating] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+
+  const loadApiKeys = useCallback(async () => {
+    try {
+      const data = await authApi.listApiKeys()
+      setApiKeys(data || [])
+    } catch (error) {
+      console.error('Failed to load API keys:', error)
+      toast.error('Failed to load SDK keys')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadApiKeys()
+  }, [loadApiKeys])
+
+  const handleCreateKey = async () => {
+    if (!newKeyName.trim()) {
+      toast.error('Enter a key name')
+      return
+    }
+
+    setIsCreating(true)
+    try {
+      const created = await authApi.createApiKey(newKeyName.trim())
+      setLatestIssuedKey(created.key)
+      authApi.saveApiKey(created.key)
+      toast.success('SDK key created and saved locally')
+      await loadApiKeys()
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create SDK key')
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
+  const handleCopy = async (value: string, message: string) => {
+    await navigator.clipboard.writeText(value)
+    toast.success(message)
+  }
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      const data = await authApi.exportData()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `pipeline-labs-export-${new Date().toISOString().slice(0, 10)}.json`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      toast.success('Account export generated')
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to export account data')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleRevoke = async (id: string) => {
+    try {
+      await authApi.revokeApiKey(id)
+      toast.success('SDK key revoked')
+      await loadApiKeys()
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to revoke SDK key')
+    }
+  }
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+      <div className="bg-[#1c1b1b] rounded-xl p-6 border border-white/5 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs text-neutral-500 uppercase tracking-wider">SDK Access</p>
+            <h3 className="text-xl font-light text-white mt-2">Ship via API key, not dashboard clicks</h3>
+            <p className="text-sm text-neutral-400 mt-2">
+              Generate a server-issued API key, connect customer-owned cloud, and let the SDK import datasets, plans, jobs, and provider metadata for automation.
+            </p>
+          </div>
+          <span className="material-symbols-outlined text-[#d5c5a6] text-3xl">vpn_key</span>
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-neutral-950/60 p-4 font-mono text-xs text-neutral-300">
+          <div>export PIPELINE_LABS_API_KEY=plk_live_...</div>
+          <div className="mt-2">client = PipelineLabs(api_key=os.environ["PIPELINE_LABS_API_KEY"])</div>
+          <div className="mt-2">snapshot = client.auth.export_data()</div>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-3">
+          <input
+            value={newKeyName}
+            onChange={(e) => setNewKeyName(e.target.value)}
+            placeholder="SDK key name"
+            className="flex-1 bg-neutral-950 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-neutral-600 focus:border-white/20 focus:outline-none"
+          />
+          <button
+            onClick={handleCreateKey}
+            disabled={isCreating}
+            className="bg-white text-neutral-900 px-4 py-2.5 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+          >
+            {isCreating ? 'Creating...' : 'Create SDK Key'}
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="border border-white/10 text-white px-4 py-2.5 rounded-lg text-sm hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
+          >
+            <Download className="w-4 h-4" />
+            {isExporting ? 'Exporting...' : 'Export User Data'}
+          </button>
+        </div>
+
+        {latestIssuedKey && (
+          <div className="rounded-xl border border-[#d5c5a6]/10 bg-[#d5c5a6]/5 p-4">
+            <p className="text-xs uppercase tracking-wider text-[#d5c5a6]">Copy now</p>
+            <p className="text-xs text-neutral-300 font-mono break-all mt-2">{latestIssuedKey}</p>
+            <button
+              onClick={() => void handleCopy(latestIssuedKey, 'SDK key copied')}
+              className="mt-3 text-sm text-[#d5c5a6] hover:underline flex items-center gap-2"
+            >
+              <Copy className="w-4 h-4" />
+              Copy API key
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-[#1c1b1b] rounded-xl p-6 border border-white/5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-xs text-neutral-500 uppercase tracking-wider">Active Keys</p>
+            <h3 className="text-lg font-light text-white mt-2">Automation credentials</h3>
+          </div>
+          <Link to="/api/docs" className="text-sm text-[#d5c5a6] hover:underline">
+            SDK docs
+          </Link>
+        </div>
+
+        {isLoading ? (
+          <p className="text-sm text-neutral-500">Loading SDK keys...</p>
+        ) : apiKeys.length === 0 ? (
+          <p className="text-sm text-neutral-500">No SDK keys created yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {apiKeys.slice(0, 4).map((key) => (
+              <div key={key.id} className="rounded-lg border border-white/5 bg-neutral-950/50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-white">{key.name}</p>
+                    <p className="text-xs text-neutral-500 mt-1 font-mono">{key.key_prefix}...{key.last4}</p>
+                    <p className="text-xs text-neutral-600 mt-2">
+                      {key.last_used_at ? `Last used ${new Date(key.last_used_at).toLocaleString()}` : 'Never used yet'}
+                    </p>
+                  </div>
+                  {!key.revoked_at && (
+                    <button
+                      onClick={() => void handleRevoke(key.id)}
+                      className="text-xs text-neutral-400 hover:text-red-400 transition-colors"
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
 }
 
 // Sidebar Navigation Items
@@ -129,7 +323,7 @@ function Sidebar({
             <h1 className="text-xl font-bold tracking-tighter text-white">Pipeline Labs</h1>
           </Link>
           <p className="text-[10px] uppercase tracking-wider text-neutral-500 mt-1" style={{ fontFamily: "'Space Grotesk', monospace" }}>
-            AI Data Platform
+            SDK-First LLM Ops
           </p>
         </div>
         
@@ -359,7 +553,7 @@ function OverviewPage({
             Welcome back, {profile?.full_name?.split(' ')[0] || 'User'}
           </h2>
           <p className="text-neutral-400 text-lg font-light leading-relaxed">
-            Transform your messy data into trainable AI models. Upload datasets, clean them with AI, and export ready-to-train data.
+            Operate training, storage, and dataset preparation from one control plane while execution stays on infrastructure your team owns.
           </p>
         </div>
         <div className="flex flex-col items-end gap-4 shrink-0">
@@ -430,9 +624,11 @@ function OverviewPage({
             <span className="material-symbols-outlined text-[#d5c5a6]">model_training</span>
           </div>
           <h4 className="text-3xl font-light text-[#d5c5a6]">→</h4>
-          <p className="text-xs text-neutral-500 mt-1">AI-powered training</p>
+          <p className="text-xs text-neutral-500 mt-1">SDK-driven orchestration</p>
         </Link>
       </div>
+
+      <SDKAccessPanel />
 
       {/* Recent Datasets */}
       <section className="space-y-4">

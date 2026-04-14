@@ -1,27 +1,31 @@
 import { Router, Request, Response } from 'express';
-import { createUserClient } from '../supabase';
+import { getAuth } from '../auth';
+import { supabaseAdmin } from '../supabase';
+import { reconcileJobState } from '../services/jobState';
 
 export const monitoringRouter = Router();
 
 // Get logs for a training job
 monitoringRouter.get('/:jobId/logs', async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      res.status(401).json({ error: 'Missing authorization header' });
-      return;
-    }
-    const accessToken = authHeader.split(' ')[1];
-    if (!accessToken) {
-      res.status(401).json({ error: 'Missing access token' });
-      return;
-    }
-    const client = createUserClient(accessToken);
+    const auth = getAuth(req);
 
     const limit = parseInt(req.query.limit as string) || 100;
     const offset = parseInt(req.query.offset as string) || 0;
 
-    const { data, error } = await client
+    const { data: job } = await supabaseAdmin
+      .from('training_jobs')
+      .select('id')
+      .eq('id', req.params.jobId)
+      .eq('user_id', auth.userId)
+      .maybeSingle();
+
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
       .from('training_logs')
       .select('*')
       .eq('job_id', req.params.jobId)
@@ -42,24 +46,26 @@ monitoringRouter.get('/:jobId/logs', async (req: Request, res: Response) => {
 // Get metrics for a training job (for loss/accuracy graphs)
 monitoringRouter.get('/:jobId/metrics', async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      res.status(401).json({ error: 'Missing authorization header' });
-      return;
-    }
-    const accessToken = authHeader.split(' ')[1];
-    if (!accessToken) {
-      res.status(401).json({ error: 'Missing access token' });
-      return;
-    }
-    const client = createUserClient(accessToken);
+    const auth = getAuth(req);
 
     // Pagination support
     const pageSize = Math.min(parseInt(req.query.pageSize as string) || 1000, 10000); // Max 10000
     const page = Math.max(parseInt(req.query.page as string) || 0, 0);
     const offset = page * pageSize;
 
-    const { data, error } = await client
+    const { data: job } = await supabaseAdmin
+      .from('training_jobs')
+      .select('id')
+      .eq('id', req.params.jobId)
+      .eq('user_id', auth.userId)
+      .maybeSingle();
+
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
       .from('training_metrics')
       .select('*')
       .eq('job_id', req.params.jobId)
@@ -92,31 +98,24 @@ monitoringRouter.get('/:jobId/metrics', async (req: Request, res: Response) => {
 // Get job status summary
 monitoringRouter.get('/:jobId/status', async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      res.status(401).json({ error: 'Missing authorization header' });
-      return;
-    }
-    const accessToken = authHeader.split(' ')[1];
-    if (!accessToken) {
-      res.status(401).json({ error: 'Missing access token' });
-      return;
-    }
-    const client = createUserClient(accessToken);
+    const auth = getAuth(req);
 
-    const { data: job, error } = await client
+    const { data: job, error } = await supabaseAdmin
       .from('training_jobs')
       .select('id, status, started_at, completed_at, error_message, final_metrics, instance_type, instance_region')
       .eq('id', req.params.jobId)
-      .single();
+      .eq('user_id', auth.userId)
+      .maybeSingle();
 
     if (error || !job) {
       res.status(404).json({ error: 'Job not found' });
       return;
     }
 
+    const reconciledJob = await reconcileJobState({ ...job, user_id: auth.userId });
+
     // Get latest logs
-    const { data: recentLogs } = await client
+    const { data: recentLogs } = await supabaseAdmin
       .from('training_logs')
       .select('timestamp, level, message')
       .eq('job_id', req.params.jobId)
@@ -124,7 +123,7 @@ monitoringRouter.get('/:jobId/status', async (req: Request, res: Response) => {
       .limit(10);
 
     // Get latest metrics
-    const { data: latestMetrics } = await client
+    const { data: latestMetrics } = await supabaseAdmin
       .from('training_metrics')
       .select('metric_name, metric_value, epoch, step')
       .eq('job_id', req.params.jobId)
@@ -132,7 +131,7 @@ monitoringRouter.get('/:jobId/status', async (req: Request, res: Response) => {
       .limit(20);
 
     res.json({
-      ...job,
+      ...reconciledJob,
       recentLogs: recentLogs || [],
       latestMetrics: latestMetrics || [],
     });

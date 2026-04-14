@@ -1,390 +1,228 @@
 openapi: 3.1.0
 info:
   title: Pipeline Labs API
+  version: 2.0.0
   description: |
-    AI Data Infrastructure API for ML Teams. Transform raw data into production-ready ML datasets with AI-powered preprocessing, schema-aware cleaning, automated validation, and reproducible workflows.
-  version: 1.0.0
-  contact:
-    name: zehanx technologies
-    email: zehanxtech@gmail.com
-    url: https://zehanxtech.com
-  license:
-    name: MIT
-    url: https://opensource.org/licenses/MIT
+    Pipeline Labs is an SDK-first platform for orchestrating LLM and ML training workflows
+    on infrastructure owned by the customer. The API supports Supabase bearer tokens for the web app
+    and server-issued API keys for SDK and automation use cases.
 servers:
   - url: https://pipelinelabs-ashen.vercel.app/api
-    description: Production API
-  - url: http://localhost:3000/api
-    description: Local Development
+    description: Production
+  - url: http://localhost:3001/api
+    description: Local development
+
+tags:
+  - name: System
+  - name: Auth
+  - name: AI
+  - name: Planner
+  - name: Cloud
+  - name: Jobs
+  - name: Monitoring
 
 paths:
-  /datasets:
+  /health:
     get:
-      summary: List datasets
-      description: Retrieve all datasets for the authenticated user
-      operationId: listDatasets
-      tags:
-        - Datasets
-      security:
-        - bearerAuth: []
+      tags: [System]
+      summary: Health check
+      operationId: getHealth
+      security: []
       responses:
         '200':
-          description: List of datasets
+          description: API health and auth mode
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Dataset'
-                  total:
-                    type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    
-    post:
-      summary: Create dataset
-      description: Upload a new dataset for processing
-      operationId: createDataset
-      tags:
-        - Datasets
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+                  authMode:
+                    type: string
+                    enum: [enforced, development-bypass]
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Resolve current identity
+      operationId: getCurrentIdentity
       security:
         - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: CSV or JSON file to upload
-                name:
-                  type: string
-                  description: Dataset name
-                description:
-                  type: string
-                  description: Dataset description
+        - apiKeyAuth: []
       responses:
-        '201':
-          description: Dataset created successfully
+        '200':
+          description: Authenticated identity
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Dataset'
+                $ref: '#/components/schemas/CurrentIdentity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/api-keys:
+    get:
+      tags: [Auth]
+      summary: List API keys
+      operationId: listApiKeys
+      security:
+        - bearerAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: API keys for the current user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiKey'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Auth]
+      summary: Create API key
+      operationId: createApiKey
+      security:
+        - bearerAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiKeyRequest'
+      responses:
+        '201':
+          description: API key created. The plaintext key is only returned once.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiKey'
+                  - type: object
+                    properties:
+                      key:
+                        type: string
+                        example: plk_live_7d8b6f7fd4a8b8c7d2e4f0bc24901ef6f51ef984d4be6cf1
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /datasets/{datasetId}:
+  /auth/export:
     get:
-      summary: Get dataset
-      description: Retrieve a specific dataset by ID
-      operationId: getDataset
-      tags:
-        - Datasets
+      tags: [Auth]
+      summary: Export all user-scoped SDK data
+      operationId: exportUserData
       security:
         - bearerAuth: []
-      parameters:
-        - name: datasetId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - apiKeyAuth: []
       responses:
         '200':
-          description: Dataset details
+          description: Full export of the authenticated user's control-plane data
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Dataset'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    
-    put:
-      summary: Update dataset
-      description: Update dataset metadata
-      operationId: updateDataset
-      tags:
-        - Datasets
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: datasetId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DatasetUpdate'
-      responses:
-        '200':
-          description: Dataset updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Dataset'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    
-    delete:
-      summary: Delete dataset
-      description: Delete a dataset and all associated data
-      operationId: deleteDataset
-      tags:
-        - Datasets
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: datasetId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204':
-          description: Dataset deleted
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: '#/components/schemas/UserDataExport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
-  /datasets/{datasetId}/analyze:
-    post:
-      summary: Analyze dataset
-      description: Run AI-powered column analysis on the dataset
-      operationId: analyzeDataset
-      tags:
-        - Analysis
+  /auth/api-keys/{id}:
+    delete:
+      tags: [Auth]
+      summary: Revoke API key
+      operationId: revokeApiKey
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
-        - name: datasetId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - $ref: '#/components/parameters/IdPath'
       responses:
         '200':
-          description: Analysis complete
+          description: API key revoked
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  columns:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ColumnAnalysis'
-                  aiReasonings:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AIReasoning'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                  success:
+                    type: boolean
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
-  /datasets/{datasetId}/clean:
+  /ai/chat:
     post:
-      summary: Clean dataset
-      description: Apply data cleaning operations based on AI recommendations
-      operationId: cleanDataset
-      tags:
-        - Processing
+      tags: [AI]
+      summary: ML copilot chat
+      operationId: createAiChatResponse
       security:
         - bearerAuth: []
-      parameters:
-        - name: datasetId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - apiKeyAuth: []
       requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiChatRequest'
+      responses:
+        '200':
+          description: Model response, optionally including chart or transform blocks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /ai/reasonings:
+    post:
+      tags: [AI]
+      summary: Generate column reasonings
+      operationId: generateColumnReasonings
+      security:
+        - bearerAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               properties:
-                operations:
+                columns:
                   type: array
                   items:
-                    type: string
-                    enum: [remove_nulls, remove_duplicates, fix_types, remove_outliers]
+                    type: object
+              required: [columns]
       responses:
         '200':
-          description: Cleaning complete
+          description: Reasonings for supplied columns
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Dataset'
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiReasoning'
 
-  /datasets/{datasetId}/transform:
-    post:
-      summary: Transform dataset
-      description: Apply transformations (encoding, scaling, feature engineering)
-      operationId: transformDataset
-      tags:
-        - Processing
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: datasetId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                encoding:
-                  type: string
-                  enum: [one_hot, label, target]
-                scaling:
-                  type: string
-                  enum: [standard, min_max, robust]
-                featureEngineering:
-                  type: boolean
-      responses:
-        '200':
-          description: Transformation complete
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Dataset'
-
-  /datasets/{datasetId}/export:
-    get:
-      summary: Export dataset
-      description: Export processed dataset in various formats
-      operationId: exportDataset
-      tags:
-        - Export
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: datasetId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: format
-          in: query
-          schema:
-            type: string
-            enum: [csv, json, parquet, xlsx]
-            default: csv
-        - name: split
-          in: query
-          schema:
-            type: string
-            enum: [train_test, train_test_val]
-      responses:
-        '200':
-          description: Exported data
-          content:
-            application/octet-stream:
-              schema:
-                type: string
-                format: binary
-
-  /chat:
-    post:
-      summary: AI Chat
-      description: Send a message to the AI assistant for data preprocessing guidance
-      operationId: chat
-      tags:
-        - AI
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChatRequest'
-      responses:
-        '200':
-          description: AI response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChatResponse'
-
-  /auth/google:
-    post:
-      summary: Google OAuth
-      description: Exchange Google OAuth code for session token
-      operationId: googleAuth
-      tags:
-        - Authentication
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                code:
-                  type: string
-                  description: OAuth authorization code
-      responses:
-        '200':
-          description: Authentication successful
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                  user:
-                    $ref: '#/components/schemas/User'
-
-  /status:
-    get:
-      summary: API Status
-      description: Check API and service health status (public endpoint, no authentication required)
-      operationId: getStatus
-      tags:
-        - System
-      responses:
-        '200':
-          description: System status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SystemStatus'
-
-  # ============================================
-  # TRAINING PLANNER API
-  # ============================================
   /planner/analyze:
     post:
+      tags: [Planner]
       summary: Analyze dataset and generate training plan
-      description: AI analyzes dataset to detect data types, label columns, and generate an optimal ML training plan
-      operationId: analyzeAndPlan
-      tags:
-        - AI Training Planner
+      operationId: analyzeDatasetForTraining
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -395,13 +233,12 @@ paths:
                 datasetId:
                   type: string
                   format: uuid
-                  description: ID of the dataset to analyze
                 userObjective:
                   type: string
-                  description: Optional training objective (e.g., "Maximize F1 score")
+              required: [datasetId]
       responses:
         '200':
-          description: Analysis complete with training plan
+          description: Analysis and generated plan
           content:
             application/json:
               schema:
@@ -414,41 +251,35 @@ paths:
                   planId:
                     type: string
                     format: uuid
-        '401':
-          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
   /planner:
     get:
+      tags: [Planner]
       summary: List training plans
-      description: Get all training plans for the authenticated user
-      operationId: listPlans
-      tags:
-        - AI Training Planner
+      operationId: listTrainingPlans
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       responses:
         '200':
-          description: List of training plans
+          description: Training plans for the current user
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/TrainingPlanRecord'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
 
   /planner/{planId}:
     get:
+      tags: [Planner]
       summary: Get training plan
-      description: Retrieve a specific training plan by ID
-      operationId: getPlan
-      tags:
-        - AI Training Planner
+      operationId: getTrainingPlan
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
         - name: planId
           in: path
@@ -458,22 +289,20 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Training plan details
+          description: Training plan
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrainingPlanRecord'
         '404':
           $ref: '#/components/responses/NotFound'
-    
     patch:
+      tags: [Planner]
       summary: Update training plan
-      description: Modify training plan parameters or status (e.g., approve for execution)
-      operationId: updatePlan
-      tags:
-        - AI Training Planner
+      operationId: updateTrainingPlan
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
         - name: planId
           in: path
@@ -482,6 +311,7 @@ paths:
             type: string
             format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -494,44 +324,38 @@ paths:
                   enum: [draft, approved, rejected, executing, completed, failed]
       responses:
         '200':
-          description: Plan updated
+          description: Updated training plan
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrainingPlanRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
-  # ============================================
-  # CLOUD PROVIDERS API
-  # ============================================
   /cloud/providers:
     get:
-      summary: List cloud providers
-      description: Get all connected cloud provider accounts
-      operationId: listProviders
-      tags:
-        - Cloud Connect
+      tags: [Cloud]
+      summary: List connected cloud providers
+      operationId: listCloudProviders
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       responses:
         '200':
-          description: List of cloud providers
+          description: Connected cloud accounts
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/CloudProvider'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-    
     post:
+      tags: [Cloud]
       summary: Add cloud provider
-      description: Connect a new cloud provider (AWS, Azure, GCP, or RunPod)
-      operationId: addProvider
-      tags:
-        - Cloud Connect
+      operationId: createCloudProvider
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -539,39 +363,27 @@ paths:
             schema:
               $ref: '#/components/schemas/CloudProviderInput'
       responses:
-        '201':
-          description: Provider added successfully
+        '200':
+          description: Connected provider
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CloudProvider'
         '400':
-          description: Invalid credentials
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+          $ref: '#/components/responses/BadRequest'
 
   /cloud/providers/{id}:
     patch:
+      tags: [Cloud]
       summary: Update cloud provider
-      description: Update provider credentials or settings
-      operationId: updateProvider
-      tags:
-        - Cloud Connect
+      operationId: updateCloudProvider
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - $ref: '#/components/parameters/IdPath'
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -581,31 +393,25 @@ paths:
                   type: string
                 credentials:
                   type: object
+                  additionalProperties: true
                 is_active:
                   type: boolean
       responses:
         '200':
-          description: Provider updated
+          description: Updated provider
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CloudProvider'
-    
     delete:
+      tags: [Cloud]
       summary: Delete cloud provider
-      description: Remove a connected cloud provider
-      operationId: deleteProvider
-      tags:
-        - Cloud Connect
+      operationId: deleteCloudProvider
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - $ref: '#/components/parameters/IdPath'
       responses:
         '200':
           description: Provider deleted
@@ -619,13 +425,12 @@ paths:
 
   /cloud/estimate-cost:
     post:
+      tags: [Cloud]
       summary: Estimate training cost
-      description: Get estimated cost for a training job on a specific cloud provider
-      operationId: estimateCost
-      tags:
-        - Cloud Connect
+      operationId: estimateTrainingCost
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -642,9 +447,10 @@ paths:
                 estimatedHours:
                   type: number
                   default: 1
+              required: [providerId, gpuType]
       responses:
         '200':
-          description: Cost estimate
+          description: Estimated cost
           content:
             application/json:
               schema:
@@ -659,39 +465,32 @@ paths:
                   estimatedCostUsd:
                     type: number
 
-  # ============================================
-  # TRAINING JOBS API
-  # ============================================
   /jobs:
     get:
+      tags: [Jobs]
       summary: List training jobs
-      description: Get all training jobs for the authenticated user
-      operationId: listJobs
-      tags:
-        - Training Jobs
+      operationId: listTrainingJobs
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       responses:
         '200':
-          description: List of training jobs
+          description: Training jobs
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/TrainingJob'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
 
   /jobs/start:
     post:
+      tags: [Jobs]
       summary: Start training job
-      description: Execute an approved training plan on a cloud provider
-      operationId: startJob
-      tags:
-        - Training Jobs
+      operationId: startTrainingJob
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -702,14 +501,13 @@ paths:
                 planId:
                   type: string
                   format: uuid
-                  description: Approved training plan ID
                 cloudProviderId:
                   type: string
                   format: uuid
-                  description: Cloud provider to use for training
+              required: [planId, cloudProviderId]
       responses:
         '200':
-          description: Training job started
+          description: Job started
           content:
             application/json:
               schema:
@@ -720,18 +518,15 @@ paths:
                     format: uuid
                   status:
                     type: string
-        '400':
-          $ref: '#/components/responses/BadRequest'
 
   /jobs/{jobId}:
     get:
+      tags: [Jobs]
       summary: Get training job
-      description: Retrieve details of a specific training job
-      operationId: getJob
-      tags:
-        - Training Jobs
+      operationId: getTrainingJob
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
         - name: jobId
           in: path
@@ -741,7 +536,7 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Job details
+          description: Job detail
           content:
             application/json:
               schema:
@@ -751,13 +546,12 @@ paths:
 
   /jobs/{jobId}/cancel:
     post:
+      tags: [Jobs]
       summary: Cancel training job
-      description: Stop a running training job and terminate cloud resources
-      operationId: cancelJob
-      tags:
-        - Training Jobs
+      operationId: cancelTrainingJob
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
         - name: jobId
           in: path
@@ -776,18 +570,14 @@ paths:
                   success:
                     type: boolean
 
-  # ============================================
-  # MONITORING API
-  # ============================================
   /monitoring/{jobId}/logs:
     get:
+      tags: [Monitoring]
       summary: Get training logs
-      description: Retrieve streaming logs from a training job
-      operationId: getLogs
-      tags:
-        - Monitoring
+      operationId: getTrainingLogs
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
         - name: jobId
           in: path
@@ -817,13 +607,12 @@ paths:
 
   /monitoring/{jobId}/metrics:
     get:
+      tags: [Monitoring]
       summary: Get training metrics
-      description: Retrieve time-series metrics (loss, accuracy, GPU usage) for a training job
-      operationId: getMetrics
-      tags:
-        - Monitoring
+      operationId: getTrainingMetrics
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
         - name: jobId
           in: path
@@ -831,9 +620,19 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 1000
       responses:
         '200':
-          description: Training metrics grouped by metric name
+          description: Metrics grouped by metric name
           content:
             application/json:
               schema:
@@ -841,17 +640,16 @@ paths:
                 additionalProperties:
                   type: array
                   items:
-                    $ref: '#/components/schemas/TrainingMetric'
+                    $ref: '#/components/schemas/MetricPoint'
 
   /monitoring/{jobId}/status:
     get:
-      summary: Get job status
-      description: Get current status, recent logs, and latest metrics for a job
-      operationId: getJobStatus
-      tags:
-        - Monitoring
+      tags: [Monitoring]
+      summary: Get training job status summary
+      operationId: getTrainingJobStatus
       security:
         - bearerAuth: []
+        - apiKeyAuth: []
       parameters:
         - name: jobId
           in: path
@@ -861,22 +659,11 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Job status summary
+          description: Status summary
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  recentLogs:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/TrainingLog'
-                  latestMetrics:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/TrainingMetric'
+                $ref: '#/components/schemas/TrainingJobStatus'
 
 components:
   securitySchemes:
@@ -884,12 +671,64 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: |
-        JWT token from Supabase authentication. All authenticated endpoints validate the JWT token
-        and enforce Row Level Security (RLS) policies to ensure users can only access their own data.
+      description: Supabase access token used by the web app.
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: Server-issued API key for SDK and automation workflows.
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
 
   schemas:
-    Dataset:
+    Profile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          nullable: true
+        full_name:
+          type: string
+          nullable: true
+        avatar_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CurrentIdentity:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        authType:
+          type: string
+          enum: [jwt, api_key, dev]
+        apiKeyId:
+          type: string
+          format: uuid
+          nullable: true
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/Profile'
+            - type: 'null'
+
+    ApiKey:
       type: object
       properties:
         id:
@@ -897,101 +736,45 @@ components:
           format: uuid
         name:
           type: string
-        description:
+        key_prefix:
           type: string
-        status:
+        last4:
           type: string
-          enum: [uploaded, analyzing, cleaning, transforming, ready, error]
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        rowCount:
-          type: integer
-        columnCount:
-          type: integer
-        fileSize:
-          type: integer
-          description: Size in bytes
-        columns:
+        scopes:
           type: array
           items:
-            $ref: '#/components/schemas/ColumnAnalysis'
-      required:
-        - id
-        - name
-        - status
-        - createdAt
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
 
-    DatasetUpdate:
+    CreateApiKeyRequest:
       type: object
       properties:
         name:
           type: string
-        description:
+        expiresAt:
           type: string
+          format: date-time
+        scopes:
+          type: array
+          items:
+            type: string
+      required: [name]
 
-    ColumnAnalysis:
-      type: object
-      properties:
-        name:
-          type: string
-        type:
-          type: string
-          enum: [numerical, categorical, datetime, text, boolean]
-        nullCount:
-          type: integer
-        nullPercent:
-          type: number
-          minimum: 0
-          maximum: 100
-        uniqueCount:
-          type: integer
-        uniquePercent:
-          type: number
-          minimum: 0
-          maximum: 100
-        mean:
-          type: number
-        median:
-          type: number
-        std:
-          type: number
-        min:
-          type: number
-        max:
-          type: number
-        isConstant:
-          type: boolean
-        isId:
-          type: boolean
-        isEmail:
-          type: boolean
-        keep:
-          type: boolean
-        scalingMethod:
-          type: string
-          enum: [none, normalize, standardize]
-
-    AIReasoning:
-      type: object
-      properties:
-        column:
-          type: string
-        action:
-          type: string
-          enum: [kept, dropped, transformed]
-        reason:
-          type: string
-        suggestion:
-          type: string
-        type:
-          type: string
-          enum: [drop, keep, transform, warning, suggestion]
-
-    ChatRequest:
+    AiChatRequest:
       type: object
       properties:
         message:
@@ -1009,76 +792,23 @@ components:
                 enum: [user, assistant]
               content:
                 type: string
-        provider:
-          type: string
-          enum: [openrouter]
-          default: openrouter
-      required:
-        - message
+      required: [message]
 
-    ChatResponse:
+    AiReasoning:
       type: object
       properties:
-        content:
+        column:
           type: string
-        reasoning:
-          type: array
-          items:
-            type: object
-            properties:
-              step:
-                type: integer
-              message:
-                type: string
-              status:
-                type: string
-                enum: [pending, running, complete]
-        downloadUrl:
+        action:
           type: string
-          format: uri
+        reason:
+          type: string
+        suggestion:
+          type: string
+          nullable: true
+        type:
+          type: string
 
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        name:
-          type: string
-        avatar:
-          type: string
-          format: uri
-
-    SystemStatus:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [operational, degraded, down]
-        services:
-          type: array
-          items:
-            type: object
-            properties:
-              name:
-                type: string
-              status:
-                type: string
-                enum: [operational, degraded, down]
-              uptime:
-                type: string
-              responseTime:
-                type: string
-        timestamp:
-          type: string
-          format: date-time
-
-    # ============================================
-    # TRAINING PLANNER SCHEMAS
-    # ============================================
     DatasetAnalysis:
       type: object
       properties:
@@ -1092,48 +822,55 @@ components:
         columns:
           type: array
           items:
-            type: object
-            properties:
-              name:
-                type: string
-              type:
-                type: string
-                enum: [numerical, categorical, text, datetime, id]
-              unique_count:
-                type: integer
-              null_percent:
-                type: number
+            $ref: '#/components/schemas/DatasetColumn'
         label_column:
           type: string
           nullable: true
         task_type:
           type: string
-          enum: [classification, regression, text_classification, ner, llm_finetuning, image_classification, object_detection, clustering, anomaly_detection]
         suggested_models:
           type: array
           items:
-            type: object
-            properties:
-              name:
-                type: string
-              framework:
-                type: string
-              gpu_required:
-                type: string
-              estimated_time_minutes:
-                type: number
-              estimated_cost_usd:
-                type: number
-              confidence:
-                type: number
+            $ref: '#/components/schemas/SuggestedModel'
         preprocessing_steps:
           type: array
           items:
             type: string
         data_quality_score:
           type: number
-          minimum: 0
-          maximum: 100
+
+    DatasetColumn:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [numerical, categorical, text, datetime, id]
+        unique_count:
+          type: integer
+        null_percent:
+          type: number
+        sample_values:
+          type: array
+          items:
+            type: string
+
+    SuggestedModel:
+      type: object
+      properties:
+        name:
+          type: string
+        framework:
+          type: string
+        gpu_required:
+          type: string
+        estimated_time_minutes:
+          type: number
+        estimated_cost_usd:
+          type: number
+        confidence:
+          type: number
 
     TrainingPlan:
       type: object
@@ -1142,21 +879,17 @@ components:
           type: string
         model:
           type: string
-          description: Model name (e.g., distilbert-base-uncased, XGBoost)
         framework:
           type: string
           enum: [pytorch, tensorflow, sklearn, xgboost]
         train_test_split:
           type: string
-          example: "80/20"
         batch_size:
           type: integer
         optimizer:
           type: string
-          example: adamw
         learning_rate:
           type: number
-          example: 0.001
         epochs:
           type: integer
         gpu_required:
@@ -1176,19 +909,10 @@ components:
           type: number
         hyperparameter_search:
           type: object
-          properties:
-            method:
-              type: string
-              enum: [grid, random, bayesian]
-            params:
-              type: object
-              additionalProperties:
-                type: array
-                items:
-                  type: number
+          nullable: true
         reasoning:
           type: string
-          description: AI explanation for plan choices
+          nullable: true
 
     TrainingPlanRecord:
       type: object
@@ -1216,31 +940,39 @@ components:
           type: string
           format: date-time
 
-    # ============================================
-    # CLOUD PROVIDER SCHEMAS
-    # ============================================
-    CloudProvider:
+    DatasetRecord:
       type: object
       properties:
         id:
           type: string
           format: uuid
-        provider:
+        file_name:
           type: string
-          enum: [aws, azure, gcp, runpod]
-        label:
+        mime_type:
           type: string
-        credentials:
-          type: object
-          description: |
-            Masked credentials (actual values hidden). Credentials are encrypted at rest
-            using AES-256-GCM encryption before storage in the database.
-        is_active:
-          type: boolean
-        last_verified_at:
+          nullable: true
+        storage_path:
+          type: string
+          nullable: true
+        row_count:
+          type: integer
+        column_count:
+          type: integer
+        status:
+          type: string
+        data_type:
+          type: string
+          nullable: true
+        label_column:
+          type: string
+          nullable: true
+        task_type:
+          type: string
+          nullable: true
+        created_at:
           type: string
           format: date-time
-        created_at:
+        updated_at:
           type: string
           format: date-time
 
@@ -1254,20 +986,27 @@ components:
           type: string
         credentials:
           type: object
-          description: |
-            Provider-specific credentials. These are encrypted at rest using AES-256-GCM
-            encryption before storage in the database:
-            - AWS: {access_key_id, secret_access_key, region}
-            - Azure: {subscription_id, tenant_id, client_id, client_secret, resource_group, region}
-            - GCP: {project_id, service_account_key, region}
-            - RunPod: {api_key}
-      required:
-        - provider
-        - credentials
+          additionalProperties: true
+      required: [provider, credentials]
 
-    # ============================================
-    # TRAINING JOB SCHEMAS
-    # ============================================
+    CloudProvider:
+      allOf:
+        - $ref: '#/components/schemas/CloudProviderInput'
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            is_active:
+              type: boolean
+            last_verified_at:
+              type: string
+              format: date-time
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+
     TrainingJob:
       type: object
       properties:
@@ -1292,29 +1031,34 @@ components:
           enum: [pending, provisioning, installing, running, completed, failed, cancelled]
         instance_id:
           type: string
-          description: Cloud instance ID
+          nullable: true
         instance_type:
           type: string
-          description: Instance type (e.g., g4dn.xlarge)
+          nullable: true
         instance_ip:
           type: string
+          nullable: true
         instance_region:
           type: string
+          nullable: true
         final_metrics:
           type: object
           additionalProperties:
             type: number
         model_artifact_path:
           type: string
-          description: Storage path for trained model
+          nullable: true
         error_message:
           type: string
+          nullable: true
         started_at:
           type: string
           format: date-time
+          nullable: true
         completed_at:
           type: string
           format: date-time
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -1322,9 +1066,22 @@ components:
           type: string
           format: date-time
 
-    # ============================================
-    # MONITORING SCHEMAS
-    # ============================================
+    TrainingJobExport:
+      allOf:
+        - $ref: '#/components/schemas/TrainingJob'
+        - type: object
+          properties:
+            plan_id:
+              type: string
+              format: uuid
+            dataset_id:
+              type: string
+              format: uuid
+            cloud_provider_id:
+              type: string
+              format: uuid
+              nullable: true
+
     TrainingLog:
       type: object
       properties:
@@ -1344,32 +1101,108 @@ components:
           type: string
         metadata:
           type: object
+          additionalProperties: true
 
-    TrainingMetric:
+    MetricPoint:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        job_id:
-          type: string
-          format: uuid
         epoch:
           type: integer
         step:
           type: integer
-        metric_name:
-          type: string
-          examples: [accuracy, loss, f1_score, val_loss]
-        metric_value:
+        value:
           type: number
         timestamp:
           type: string
           format: date-time
 
+    TrainingJobStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        final_metrics:
+          type: object
+          additionalProperties:
+            type: number
+        instance_type:
+          type: string
+          nullable: true
+        instance_region:
+          type: string
+          nullable: true
+        recentLogs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrainingLog'
+        latestMetrics:
+          type: array
+          items:
+            type: object
+            properties:
+              metric_name:
+                type: string
+              metric_value:
+                type: number
+              epoch:
+                type: integer
+              step:
+                type: integer
+
+    UserDataExport:
+      type: object
+      properties:
+        exportedAt:
+          type: string
+          format: date-time
+        userId:
+          type: string
+          format: uuid
+        authType:
+          type: string
+          enum: [jwt, api_key, dev]
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/Profile'
+            - type: 'null'
+        datasets:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatasetRecord'
+        cloudProviders:
+          type: array
+          items:
+            $ref: '#/components/schemas/CloudProvider'
+        trainingPlans:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrainingPlanRecord'
+        trainingJobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrainingJobExport'
+        apiKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKey'
+
   responses:
     BadRequest:
-      description: Bad request
+      description: Invalid request
       content:
         application/json:
           schema:
@@ -1377,11 +1210,8 @@ components:
             properties:
               error:
                 type: string
-              details:
-                type: object
-
     Unauthorized:
-      description: Unauthorized - Invalid or missing token
+      description: Unauthorized
       content:
         application/json:
           schema:
@@ -1390,7 +1220,6 @@ components:
               error:
                 type: string
                 example: Unauthorized
-
     NotFound:
       description: Resource not found
       content:
@@ -1401,14 +1230,3 @@ components:
               error:
                 type: string
                 example: Resource not found
-
-    InternalError:
-      description: Internal server error
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
-                type: string
-                example: Internal server error

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { aiApi } from '@/lib/api';
 import type { ColumnAnalysis, AIReasoning } from '@/types/dataset';
 
 export async function getAIReasonings(columns: ColumnAnalysis[]): Promise<AIReasoning[]> {
@@ -13,17 +13,12 @@ For each column return:
 Return ONLY a JSON array, no markdown.`;
 
   try {
-    const { data, error } = await supabase.functions.invoke('ai-inference', {
-      body: {
-        prompt,
-        systemPrompt: 'You are a data science expert. Respond with valid JSON only.',
-      },
-    });
+    const data = await aiApi.reasonings(columns);
+    if (Array.isArray(data)) {
+      return data as AIReasoning[];
+    }
 
-    if (error) throw error;
-    if (!data?.success) throw new Error(data?.error || 'AI failed');
-
-    const content = data.result || '';
+    const content = String(data || '');
     const cleaned = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned) as AIReasoning[];
   } catch (err) {
